@@ -70,16 +70,6 @@ def build_layout(settings):
     
     button_row= [buttons]
     
-    #button_row = [
-    #    [sg.Push(),        
-    #    sg.Button(settings[f'F{i}-label'], key='Play::F{i}'),
-    #    sg.Button('F2', key='Play::F2'),
-    #    sg.Button('F3', key='Play::F3'),
-    #    sg.Button('F4', key='Play::F4'),
-    #    sg.Button('F5', key='Play::F5'),
-    #    sg.Button('STOP', key="Stop"),
-    #    sg.Push()]
-    #]
     layout = [
         [sg.Menu(menu_def)],
         [sg.Push(), sg.Text("Device: "), sg.Input(key='Dev::Name', default_text=settings['audio-dev']), sg.Push()],
@@ -147,9 +137,16 @@ def run_gui(settings, layout, window, rig):
                 settings_menu()
 
 def _init_settings():
-    settings = sg.UserSettings('wk2x-voice-keyer')
+    config_dir = os.path.join(os.path.expanduser("~"), ".config", "wk2x-voice-keyer")
+    settings = sg.UserSettings('voice-keyer.conf', config_dir)
     if settings['audio-dev'] is None:
         settings['audio-dev'] = "AetherSDR"
+    
+    if settings['audio-files-path'] is None:
+        settings['audio-files-path'] = os.path.join(config_dir, "audio-files")
+    
+    #ensure path to audio files actually exists
+    os.makedirs(settings['audio-files-path'], exist_ok=True)
     
     for i in range(1,6):
         if settings[f'F{i}-label'] is None:
