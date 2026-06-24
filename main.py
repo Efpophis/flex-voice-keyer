@@ -3,6 +3,7 @@ import time
 import sys
 import subprocess
 import os
+import json
 from FlexRadio import *
 import FreeSimpleGUI as sg
 import threading
@@ -72,7 +73,7 @@ def build_layout(settings):
     
     layout = [
         [sg.Menu(menu_def)],
-        [sg.Push(), sg.Text("Device: "), sg.Input(key='Dev::Name', default_text=settings['audio-dev']), sg.Push()],
+        #
         [sg.Frame('Keyer Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Push(), sg.Button('Exit'), sg.Push()]
     ]
@@ -95,20 +96,93 @@ def about_box():
                 "A simple voice keyer for Flex Radios", 
                 "by Epophis@gitub https://github.com/Efpophis")
 
-def get_file(keyp):
-    filemap = {
-        "F1": "call.wav",
-        "F2": "call+suffix.wav",
-        "F3": "also 59.wav",
-        "F4": None,
-        "F5": None
-    }
+def get_file(settings, keyp):
+    filemap = {}
+
+    for i in range(1,6):
+        filemap[f'F{i}'] = settings[f'F{i}-audio']
+        
     return filemap[keyp]
+
+def list_pw_sinks():
+    result = subprocess.run(
+        ["pw-dump"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    nodes = json.loads(result.stdout)
+    devices = []
+
+    for obj in nodes:
+        props = obj.get("info", {}).get("props", {})
+
+        if props.get("media.class") not in {"Audio/Sink", "Stream/Input/Audio"}:
+            continue
+
+        node_id = obj.get("id")
+        name = props.get("node.name", "")
+        desc = props.get("node.description", name)
+        nick = props.get("node.nick", "")
+
+        label = desc
+        if nick and nick not in desc:
+            label = f"{desc} ({nick})"
+
+        devices.append({
+            "id": node_id,
+            "name": name,
+            "description": desc,
+            "label": label,
+            "target": str(node_id),   # good for pw-play --target
+        })
+
+    return devices
+
+def settings_menu(settings):
+    devices = list_pw_sinks()
+    devChoice = sg.Combo(key='Dev::Name', values=[d['name'] for d in devices], default_value=settings['audio-dev'])
+    settings_layout = [
+        [sg.Push(), sg.Text("Device: "), devChoice, sg.Push()],
+    ]
+    for i in range(1,6):
+        settings_layout.append([sg.Push(), 
+                                sg.Text(f"F{i} Key Label: "),
+                                sg.Input(key=f'F{i}-label', default_text=settings[f'F{i}-label']),
+                                sg.Text('Audio: '),
+                                sg.Input(key=f'F{i}-audio', default_text=settings[f'F{i}-audio']),
+                                sg.FileBrowse(key=f'F{i}-file'), sg.Push()])
     
-def settings_menu():
-    sg.popup_ok("Placeholder",
-                "Not implemented yet",
-                "TODO")
+    settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
+    
+    window = sg.Window("Settings", settings_layout, modal=True, finalize=True)
+    
+    while True:
+        event, values = window.Read()
+        
+        if event == sg.WIN_CLOSED or event == 'Cancel':
+            window.close()
+            return settings, False
+           # return None # Settings discarded
+            
+        elif event == 'Save':
+            window.close()
+            return save_settings(settings, values), True
+            #return values # Return the settings dictionary
+    
+    #sg.popup_ok("Placeholder",
+    #            "Not implemented yet",
+    #            "TODO")
+def save_settings(settings, values):
+    settings['audio-dev'] = values['Dev::Name']
+    
+    for i in range(1,6):
+        settings[f'F{i}-label'] = values[f'F{i}-label']
+        settings[f'F{i}-audio'] = values[f'F{i}-audio']
+    
+    return settings
+
 
 def run_gui(settings, layout, window, rig):
     while True:
@@ -119,11 +193,11 @@ def run_gui(settings, layout, window, rig):
         if event == sg.WIN_CLOSED or event == "Exit":
             break
         else:
-            device = values['Dev::Name']
+            device = settings['audio-dev']
             
             if "Play::" in event:
                 keyp = event[6:]
-                file = get_file(keyp)
+                file = get_file(settings, keyp)
                 if file is not None:
                     _voice_keyer(rig, device, file)
                     
@@ -134,7 +208,11 @@ def run_gui(settings, layout, window, rig):
                 about_box()
             
             if event == "Settings":
-                settings_menu()
+                rig.StopAudio()
+                settings, updated = settings_menu(settings)
+                if updated == True:
+                    window.close()
+                    layout, window = build_layout(settings)
 
 def _init_settings():
     config_dir = os.path.join(os.path.expanduser("~"), ".config", "wk2x-voice-keyer")
@@ -151,7 +229,7 @@ def _init_settings():
     for i in range(1,6):
         if settings[f'F{i}-label'] is None:
             settings[f'F{i}-label'] = f"F{i}"
-    
+            
     #print(settings)
     return settings
                 
