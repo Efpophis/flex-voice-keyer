@@ -22,7 +22,7 @@ def create_ipc_socket():
     server.bind(SOCKET_PATH)
     server.listen(5)
 
-    print(f"Listening on {SOCKET_PATH}")
+    #print(f"Listening on {SOCKET_PATH}")
 
     return server
 
@@ -83,11 +83,8 @@ def build_layout(settings):
     window = sg.Window("WK2X Flex Voice Keyer", layout, finalize=True)
 
     # key bindings
-    window.bind('<F1>', 'Play::F1')
-    window.bind('<F2>', 'Play::F2')
-    window.bind('<F3>', 'Play::F3')
-    window.bind('<F4>', 'Play::F4')
-    window.bind('<F5>', 'Play::F5')
+    for i in range(1,6):
+        window.bind(f'<F{i}>', f'Play::F{i}')
     window.bind('<Escape>', 'Stop')
 
     return layout, window
@@ -180,7 +177,6 @@ def save_settings(settings, values):
 
     return settings
 
-
 def run_gui(settings, layout, window, rig):
     while True:
         rig.PollAudio()
@@ -208,8 +204,8 @@ def run_gui(settings, layout, window, rig):
                 rig.StopAudio()
                 settings, updated = settings_menu(settings)
                 if updated == True:
-                    window.close()
-                    layout, window = build_layout(settings)
+                    for i in range(1,6):
+                        window[f'Play::F{i}'].update(settings[f'F{i}-label'])
 
 def _init_settings():
     config_dir = os.path.join(os.path.expanduser("~"), ".config", "wk2x-voice-keyer")

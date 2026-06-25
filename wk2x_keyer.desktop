@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=WK2X Voice Keyer
+Exec=wk2x_keyer
+Type=Application
+StartupNotify=true
+Icon=/usr/local/share/icons/wk2x_keyer_icon.png
+Comment="Digital Voice Keyer for AetherSDR / Flex 6000 series radios"
+Terminal=false
+PrefersNonDefaultGPU=false
+
