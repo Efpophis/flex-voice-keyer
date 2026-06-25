@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import socket
 import time
 import sys
@@ -60,26 +62,26 @@ def build_layout(settings):
         ['File', ['Settings', 'Exit']],
         ['Help', ['About']]
     ]
-    
+
     buttons = [sg.Push()]
-    
+
     for i in range(1,6):
         buttons.append(sg.Button(settings[f'F{i}-label'], key=f'Play::F{i}'))
-        
+
     buttons.append(sg.Button('STOP', key="Stop"))
     buttons.append(sg.Push())
-    
+
     button_row= [buttons]
-    
+
     layout = [
         [sg.Menu(menu_def)],
         #
         [sg.Frame('Keyer Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Push(), sg.Button('Exit'), sg.Push()]
     ]
-    
+
     window = sg.Window("WK2X Flex Voice Keyer", layout, finalize=True)
-    
+
     # key bindings
     window.bind('<F1>', 'Play::F1')
     window.bind('<F2>', 'Play::F2')
@@ -87,7 +89,7 @@ def build_layout(settings):
     window.bind('<F4>', 'Play::F4')
     window.bind('<F5>', 'Play::F5')
     window.bind('<Escape>', 'Stop')
-    
+
     return layout, window
 
 def about_box():
@@ -153,60 +155,55 @@ def settings_menu(settings):
                                 sg.Text('Audio: '),
                                 sg.Input(key=f'F{i}-audio', default_text=settings[f'F{i}-audio']),
                                 sg.FileBrowse(key=f'F{i}-file'), sg.Push()])
-    
+
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
-    
+
     window = sg.Window("Settings", settings_layout, modal=True, finalize=True)
-    
+
     while True:
         event, values = window.Read()
-        
+
         if event == sg.WIN_CLOSED or event == 'Cancel':
             window.close()
             return settings, False
-           # return None # Settings discarded
-            
+
         elif event == 'Save':
             window.close()
             return save_settings(settings, values), True
-            #return values # Return the settings dictionary
-    
-    #sg.popup_ok("Placeholder",
-    #            "Not implemented yet",
-    #            "TODO")
+
 def save_settings(settings, values):
     settings['audio-dev'] = values['Dev::Name']
-    
+
     for i in range(1,6):
         settings[f'F{i}-label'] = values[f'F{i}-label']
         settings[f'F{i}-audio'] = values[f'F{i}-audio']
-    
+
     return settings
 
 
 def run_gui(settings, layout, window, rig):
     while True:
         rig.PollAudio()
-        
+
         event, values = window.read(timeout=50)
-        
+
         if event == sg.WIN_CLOSED or event == "Exit":
             break
         else:
             device = settings['audio-dev']
-            
+
             if "Play::" in event:
                 keyp = event[6:]
                 file = get_file(settings, keyp)
                 if file is not None:
                     _voice_keyer(rig, device, file)
-                    
+
             if event == "Stop":
                 rig.StopAudio()
 
             if event == "About":
                 about_box()
-            
+
             if event == "Settings":
                 rig.StopAudio()
                 settings, updated = settings_menu(settings)
@@ -219,37 +216,31 @@ def _init_settings():
     settings = sg.UserSettings('voice-keyer.conf', config_dir)
     if settings['audio-dev'] is None:
         settings['audio-dev'] = "AetherSDR"
-    
-    if settings['audio-files-path'] is None:
-        settings['audio-files-path'] = os.path.join(config_dir, "audio-files")
-    
-    #ensure path to audio files actually exists
-    os.makedirs(settings['audio-files-path'], exist_ok=True)
-    
+
     for i in range(1,6):
         if settings[f'F{i}-label'] is None:
             settings[f'F{i}-label'] = f"F{i}"
-            
+
     #print(settings)
     return settings
-                
+
 def main(argv):
     ret = 0
     try:
         settings = _init_settings()
-        
+
         rig = FlexRadio()
         rig.Connect()
-        
+
         layout, window = build_layout(settings)
-        
+
         t = threading.Thread(
             target=ipc_listener,
             args=(window,),
             daemon=True
         )
         t.start()
-        
+
         run_gui(settings, layout, window, rig)
     except Exception as e:
         print(f"Error: {e}")

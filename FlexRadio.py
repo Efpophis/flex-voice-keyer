@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from ClientSocket import *
 import subprocess
@@ -36,14 +36,14 @@ class FlexRadio:
             self.port = int(disc['port'])            
             #print(f'host: {self.host}, port: {self.port}')                                
         sd.close()
-        
+
     def Connect(self):
         if self.port == 0:
             self.Discover()
         self.sock.connect(self.host, self.port)
         radio_info=self.sock.empty()
         #print(radio_info)
-            
+
     def SendCmd(self, cmd):
         buf = f"C{self.seq}|{cmd}\n"
         self.sock.write(buf.encode())
@@ -52,50 +52,32 @@ class FlexRadio:
         #print(data)
         self.seq += 1
         return data
-    
+
     def KeyTX(self):
         cmd = f"xmit 1"
         self.SendCmd(cmd)
         self.tx = True
         time.sleep(0.1)
-        
+
     def UnkeyTX(self):
         cmd = "xmit 0"
         self.SendCmd(cmd)
         self.tx = False
         time.sleep(0.1)
-    
+
     def PollAudio(self):
         if self.player and self.player.poll() is not None:
             self.StopAudio()
-    
+
     def SendAudio(self, device, file):
         self.player = subprocess.Popen(["pw-play", '--target', device, file])
-    
-    def StopAudio(self):            
+
+    def StopAudio(self):
         if self.player is not None:
             if self.tx == True:
                 time.sleep(0.1)
                 self.UnkeyTX()
-            
+
             self.player.terminate()
             self.player.wait(timeout=1)
             self.player = None
-        
-        
-#    def SendPermaSpot(self, spot):
-#        space = '\x7f'
-#        cmd = f"spot add rx_freq={spot['frequency']} callsign={spot['callsign'].replace(' ', space)} "
-#        cmd += f"lifetime_seconds={spot['lifetime_seconds']} priority={spot['priority']} "
-#        cmd += f"source={spot['source'].replace(' ', space)} color={spot['color']} "
-#        cmd += f"background_color={spot['background_color']}"
-        #print(cmd)
-#        self.SendCmd(cmd)
-        
-#    def SendSpot(self, spot):
-#        cmd = f"spot add rx_freq={spot['frequency']} callsign={spot['dx']} spotter_callsign={spot['spotter']} timestamp={spot['time']}"
-#        cmd += f" lifetime_seconds=3600 priority=5"
-#        comment = spot['comment'].replace(' ', '\x7f')
-#        if len(comment) > 0:
-#            cmd += f" comment={comment}"
-#        self.SendCmd(cmd)
