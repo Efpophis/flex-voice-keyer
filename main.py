@@ -195,7 +195,7 @@ def run_gui(settings, layout, window, rig):
             if "Play::" in event:
                 keyp = event[6:]
                 file = get_file(settings, keyp)
-                if file is not None:
+                if file != "":
                     _voice_keyer(rig, device, file)
 
             if event == "Stop":
