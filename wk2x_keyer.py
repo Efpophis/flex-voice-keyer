@@ -9,6 +9,10 @@ import json
 from FlexRadio import *
 import FreeSimpleGUI as sg
 import threading
+from WKAudio import *
+from wkicon import icon_b64
+
+audio = WKAudio()
 
 def create_ipc_socket():
     SOCKET_PATH="/tmp/wk2x_voicekeyer.sock"
@@ -49,9 +53,10 @@ def ipc_listener(window):
 
 def _voice_keyer(rig, device, file):
     try:
-        rig.StopAudio()
+        rig.UnkeyTX()
+        audio.StopAudio()
         rig.KeyTX()
-        rig.SendAudio(device, file)
+        audio.SendAudio(device, file)
 
     except Exception as e:
         print(f"Error executing keyer: {e}")
@@ -75,12 +80,15 @@ def build_layout(settings):
 
     layout = [
         [sg.Menu(menu_def)],
-        #
+        [sg.Text("Rig:"), sg.Text("DISCONNECTED", justification="center", text_color="black", background_color="red", key="Rig::Status"),
+         sg.Text("PTT:"), sg.Text("RX", background_color="green", justification="center", text_color="black", key="Rig::State"), sg.Push(),
+         sg.Text("Audio:"), sg.Text("NO DEVICE", text_color="black", background_color="red", justification="center",key="Audio::Status"),
+         sg.Text("Device:", key="Dev::Label"), sg.Text(settings['audio-dev'],justification="center", key="Audio::Dev")],
         [sg.Frame('Keyer Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Push(), sg.Button('Exit'), sg.Push()]
     ]
 
-    window = sg.Window("WK2X Flex Voice Keyer", layout, finalize=True)
+    window = sg.Window("WK2X Flex Voice Keyer", layout, icon=icon_b64, finalize=True)
 
     # key bindings
     for i in range(1,6):
@@ -103,44 +111,9 @@ def get_file(settings, keyp):
         
     return filemap[keyp]
 
-def list_pw_sinks():
-    result = subprocess.run(
-        ["pw-dump"],
-        capture_output=True,
-        text=True,
-        check=True
-    )
-
-    nodes = json.loads(result.stdout)
-    devices = []
-
-    for obj in nodes:
-        props = obj.get("info", {}).get("props", {})
-
-        if props.get("media.class") not in {"Audio/Sink", "Stream/Input/Audio"}:
-            continue
-
-        node_id = obj.get("id")
-        name = props.get("node.name", "")
-        desc = props.get("node.description", name)
-        nick = props.get("node.nick", "")
-
-        label = desc
-        if nick and nick not in desc:
-            label = f"{desc} ({nick})"
-
-        devices.append({
-            "id": node_id,
-            "name": name,
-            "description": desc,
-            "label": label,
-            "target": str(node_id),   # good for pw-play --target
-        })
-
-    return devices
 
 def settings_menu(settings):
-    devices = list_pw_sinks()
+    devices = audio.list_pw_sinks()
     devChoice = sg.Combo(key='Dev::Name', values=[d['name'] for d in devices], default_value=settings['audio-dev'])
     settings_layout = [
         [sg.Push(), sg.Text("Device: "), devChoice, sg.Push()],
@@ -177,35 +150,92 @@ def save_settings(settings, values):
 
     return settings
 
-def run_gui(settings, layout, window, rig):
-    while True:
-        rig.PollAudio()
+def update_status_indicators(window, flex_status, audio_status, state):
+    # flex status: {DISCONNECTED (red), DISCOVERY (gold), CONNECTED (green)}
+    # audio status: {READY (green), NO DEVICE (red)}
+    # state: {TX (gold), READY (green)}
+    color = ""
+    
+    match flex_status:
+        case "DISCONNECTED":
+            color = "red"
+            window["Rig::State"].update(visible=False)
+        case "DISCOVERY":
+            color = "gold"
+            window["Rig::State"].update(visible=False)
+        case "CONNECTED":
+            color = "green"
+            window["Rig::State"].update(visible=True)
+        case _:
+            color = "yellow"
+    window['Rig::Status'].update(flex_status, background_color=color)
+    
+    if state == "TX":
+        window["Rig::State"].update(state, background_color="gold")
+    else:
+        window["Rig::State"].update(state, background_color="green")
+    
+    match audio_status:
+        case "READY":
+            color = "green"
+        case "NO DEVICE":
+            color = "red"
+        case _:
+            color = "yellow"
+    window["Audio::Status"].update(audio_status,background_color=color)
 
+def run_gui(settings, layout, window, rig):
+    device = settings['audio-dev']
+    #global audio = WKAudio()
+    audio_status = audio.ValidateAudioDevice(device)
+    counter = 0
+    
+    while True:
+        # see if audio has finished, and we need to un-key the rig
+        if audio.PollAudio() == True:
+            time.sleep(0.1)
+            rig.UnkeyTX()
+
+        flex_status, state = rig.Status()
+    
+        if counter >= 20:
+            audio_status = audio.ValidateAudioDevice(device)
+            counter = 0
+        else:
+            counter += 1
+                
+        update_status_indicators(window, flex_status, audio_status, state)
+        window["Dev::Label"].update(visible=(audio_status=="READY"))
+        window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
+        
+        
         event, values = window.read(timeout=50)
 
         if event == sg.WIN_CLOSED or event == "Exit":
             break
         else:
-            device = settings['audio-dev']
-
             if "Play::" in event:
                 keyp = event[6:]
                 file = get_file(settings, keyp)
-                if file != "":
+                if file != "" and audio_status == "READY":
                     _voice_keyer(rig, device, file)
 
             if event == "Stop":
-                rig.StopAudio()
+                rig.UnkeyTX()
+                audio.StopAudio()
 
             if event == "About":
                 about_box()
 
             if event == "Settings":
-                rig.StopAudio()
+                rig.UnkeyTX()
+                audio.StopAudio()
                 settings, updated = settings_menu(settings)
                 if updated == True:
                     for i in range(1,6):
                         window[f'Play::F{i}'].update(settings[f'F{i}-label'])
+                    device = settings['audio-dev']
+                    audio_status = audio.ValidateAudioDevice(device)
 
 def _init_settings():
     config_dir = os.path.join(os.path.expanduser("~"), ".config", "wk2x-voice-keyer")
@@ -242,6 +272,8 @@ def main(argv):
         print(f"Error: {e}")
         ret = 1
     finally:
+        rig.UnkeyTX()
+        audio.StopAudio()
         sys.exit(ret)
 
 if __name__ == "__main__":

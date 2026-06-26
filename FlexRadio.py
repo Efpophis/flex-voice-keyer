@@ -10,8 +10,8 @@ class FlexRadio:
         self.port = 0
         self.seq = 1
         self.sock = ClientSocket()
-        self.player = None
         self.tx = False
+        self.rig_status = "DISCONNECTED"
         
     def __del__(self):
         self.sock.close()
@@ -19,6 +19,7 @@ class FlexRadio:
             self.player.terminate()
 
     def Discover(self):
+        self.rig_status = "DISCOVERY"
         disc = {}
         sd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -37,11 +38,22 @@ class FlexRadio:
             #print(f'host: {self.host}, port: {self.port}')                                
         sd.close()
 
+    def Status(self):
+        flex_status = self.rig_status
+        
+        if self.tx == True:
+            state = "TX"
+        else:
+            state = "RX"
+        
+        return flex_status, state
+
     def Connect(self):
         if self.port == 0:
             self.Discover()
         self.sock.connect(self.host, self.port)
         radio_info=self.sock.empty()
+        self.rig_status = "CONNECTED"
         #print(radio_info)
 
     def SendCmd(self, cmd):
@@ -65,19 +77,4 @@ class FlexRadio:
         self.tx = False
         time.sleep(0.1)
 
-    def PollAudio(self):
-        if self.player and self.player.poll() is not None:
-            self.StopAudio()
-
-    def SendAudio(self, device, file):
-        self.player = subprocess.Popen(["pw-play", '--target', device, file])
-
-    def StopAudio(self):
-        if self.player is not None:
-            if self.tx == True:
-                time.sleep(0.1)
-                self.UnkeyTX()
-
-            self.player.terminate()
-            self.player.wait(timeout=1)
-            self.player = None
+   

@@ -7,6 +7,8 @@ rm -rf dist
 rm -rf "$SRC_NAME"
 rm -f "${SRC_NAME}.spec"
 
+python makeb64.py wk2x_keyer_icon.png > wkicon.py
+
 # stupid windows
 if [ "`uname`" == "Linux" ]; then
     pyinstaller --onefile --noconsole "${SRC_NAME}.py"
