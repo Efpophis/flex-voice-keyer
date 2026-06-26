@@ -2,11 +2,17 @@ import subprocess
 import time
 import json
 
+
 class WKAudio:
     
     def __init__(self):
         self.player = None
-
+        self.volume = "1.0"
+        self.backend_name = "pipewire"
+        
+    def BackendName(self):
+        return self.backend_name
+        
     def PollAudio(self):
         if self.player and self.player.poll() is not None:
             self.StopAudio()
@@ -14,21 +20,27 @@ class WKAudio:
         return False
 
     def SendAudio(self, device, file):
-        self.player = subprocess.Popen(["pw-play", '--target', device, file])
+        self.player = subprocess.Popen(["pw-play", '--target', device, '--volume', self.volume, file])
 
     def StopAudio(self):
         if self.player is not None:
             self.player.terminate()
             self.player.wait(timeout=1)
-            self.player = None
+            self.player = None   
     
     def ValidateAudioDevice(self, device):
-        for dev in self.list_pw_sinks():
+        for dev in self.list_devices():
             if dev["name"] == device:
                 return "READY"
         return "NO DEVICE"
-    
-    def list_pw_sinks(self):
+
+    def SetVolume(self, volume):
+        self.volume = str(volume)
+
+    def Terminate(self):
+        self.StopAudio()
+        
+    def list_devices(self):
         result = subprocess.run(
             ["pw-dump"],
             capture_output=True,
@@ -54,12 +66,6 @@ class WKAudio:
             if nick and nick not in desc:
                 label = f"{desc} ({nick})"
 
-            devices.append({
-                "id": node_id,
-                "name": name,
-                "description": desc,
-                "label": label,
-                "target": str(node_id),   # good for pw-play --target
-            })
+            devices.append({"name": name})
 
         return devices

@@ -8,6 +8,8 @@ class PGAudio:
         self.player = None
         self.device = None
         self.backend_name = "PyGame"
+        self.volume = 1.0
+        self.player_busy = False
         pygame.mixer.init()
     
     def BackendName(self):
@@ -17,6 +19,8 @@ class PGAudio:
         if self.player is not None:
             if self.player.get_busy() == False:
                 self.player.stop()
+                self.player_busy = False
+                self.player = None
                 return True
         return False
 
@@ -24,17 +28,22 @@ class PGAudio:
         s = pygame.mixer.Sound(file)
         if self.player is None:
             self.player = pygame.mixer.Channel(1)
-        if self.player.get_busy():
+        if self.player_busy == True:
             self.player.stop()
+        self.player.set_volume(self.volume)
         self.player.play(s)
+        self.player_busy = True
     
     def StopAudio(self):
         if self.player is not None:
             self.player.stop()
+            self.player_busy = False
 
     def SetVolume(self, volume):
-        self.player.set_volume(volume)        
-        
+        if self.player_busy == True:
+            self.player.set_volume(volume)
+        self.volume = volume
+
     def ValidateAudioDevice(self, device):
         for dev in self.list_devices():
             if dev["name"] == device:
@@ -42,13 +51,15 @@ class PGAudio:
                     # re-init with new device
                     pygame.mixer.quit()
                     pygame.mixer.init(devicename=device)
-                    self.device = device                    
+                    self.device = device
+                    self.player_busy = False
                 return "READY"
         return "NO DEVICE"
 
     def Terminate(self):
         self.StopAudio()
         self.player = None
+        self.player_busy = False
         pygame.mixer.quit()
 
     def list_devices(self):

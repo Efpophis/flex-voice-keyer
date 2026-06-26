@@ -12,6 +12,8 @@ class FlexRadio:
         self.sock = ClientSocket()
         self.tx = False
         self.rig_status = "DISCONNECTED"
+        self.txd_pre = 0
+        self.txd_post = 0
         
     def __del__(self):
         self.sock.close()
@@ -69,12 +71,12 @@ class FlexRadio:
         cmd = f"xmit 1"
         self.SendCmd(cmd)
         self.tx = True
-        time.sleep(0.1)
+        time.sleep(self.txd_pre)
 
     def UnkeyTX(self):
         cmd = "xmit 0"
         self.SendCmd(cmd)
         self.tx = False
-        time.sleep(0.1)
+        time.sleep(self.txd_post)
 
    
