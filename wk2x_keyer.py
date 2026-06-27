@@ -85,22 +85,21 @@ def build_layout(settings):
     layout = [
         [sg.Menu(menu_def)],
         [sg.Frame("Status", [
-            [sg.Text("Rig:"), 
-                sg.Text("DISCONNECTED", justification="center", text_color="black", background_color="red", key="Rig::Status"),
-                sg.Text("RX", background_color="green", justification="center", text_color="black", key="Rig::State"), 
-                sg.Push()],
+            [ sg.Text("Rig:"), 
+              sg.Text("DISCONNECTED", justification="center", text_color="black", background_color="red", key="Rig::Status"),
+              sg.Text("RX", background_color="green", justification="center", text_color="black", key="Rig::State"), 
+            ],
             [sg.Text("Audio:"), sg.Text("NO DEVICE", text_color="black", background_color="red", 
                                         justification="center",key="Audio::Status"),
-                                #sg.Text("Device:", key="Dev::Label"), 
                                 sg.Text(settings['audio-dev'],justification="center", key="Audio::Dev")],
-                                [sg.Text("Backend:"), sg.Text(settings['audio-backend'], justification="center", key="Audio::Backend")]
+            [sg.Text("Backend:"), sg.Text(settings['audio-backend'], justification="center", key="Audio::Backend")]
                                 
         ],expand_x=True, expand_y=True)],
         [sg.Text("")],
-        [sg.Text("Output Volume:  0"), 
-                                    sg.Slider((1,110), orientation='horizontal', disable_number_display=True,
-                                            key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True), 
-                                sg.Text("11")],
+        [sg.Text("Output Volume:  0"),
+         sg.Slider((1,110), orientation='horizontal', disable_number_display=True,
+                    key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True), 
+        sg.Text("11")],
         [sg.Frame('Macro Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Text("")],
         [sg.Push(), sg.Button('Exit')]
@@ -241,35 +240,30 @@ def update_status_indicators(window, flex_status, audio_status, state):
     # flex status: {DISCONNECTED (red), DISCOVERY (gold), CONNECTED (green)}
     # audio status: {READY (green), NO DEVICE (red)}
     # state: {TX (gold), READY (green)}
-    color = ""
-    
+    STATUS_COLORS = {
+        "OFFLINE":      "#FF0000",
+        "NO DEVICE":    "#FF0000",
+        "DISCOVERING":  "#FFA500",
+        "CONNECTED":    "#FFD700",
+        "STANDBY":      "#FFD700",
+        "RX":           "#00FF00",
+        "READY":        "#00FF00",
+        "TX":           "#00BFFF",
+        "ERROR":        "#FF0000",
+    }
+    color = STATUS_COLORS[flex_status]
+    state_color = STATUS_COLORS[state]
     match flex_status:
         case "DISCONNECTED":
-            color = "red"
             window["Rig::State"].update(visible=False)
         case "DISCOVERY":
-            color = "gold"
             window["Rig::State"].update(visible=False)
         case "CONNECTED":
-            color = "green"
             window["Rig::State"].update(visible=True)
-        case _:
-            color = "yellow"
-    window['Rig::Status'].update(flex_status, background_color=color)
-    
-    if state == "TX":
-        window["Rig::State"].update(state, background_color="gold")
-    else:
-        window["Rig::State"].update(state, background_color="green")
-    
-    match audio_status:
-        case "READY":
-            color = "green"
-        case "NO DEVICE":
-            color = "red"
-        case _:
-            color = "yellow"
-    window["Audio::Status"].update(audio_status,background_color=color)
+
+    window['Rig::Status'].update(flex_status, background_color=STATUS_COLORS[flex_status])
+    window["Rig::State"].update(state, visible=(flex_status == "READY"), background_color=STATUS_COLORS[state])
+    window["Audio::Status"].update(audio_status,background_color=STATUS_COLORS[audio_status])
 
 def run_gui(settings, layout, window, rig):
     device = settings['audio-dev']
