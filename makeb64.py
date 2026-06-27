@@ -3,7 +3,7 @@
 import base64
 import sys
 
-file = sys.argv[1] 
+file = sys.argv[1]
 
 with open(file, "rb") as img:
    b64b = base64.b64encode(img.read())

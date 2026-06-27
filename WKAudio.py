@@ -4,15 +4,15 @@ import json
 
 
 class WKAudio:
-    
+
     def __init__(self):
         self.player = None
         self.volume = "1.0"
         self.backend_name = "pipewire"
-        
+
     def BackendName(self):
         return self.backend_name
-        
+
     def PollAudio(self):
         if self.player and self.player.poll() is not None:
             self.StopAudio()
@@ -26,8 +26,8 @@ class WKAudio:
         if self.player is not None:
             self.player.terminate()
             self.player.wait(timeout=1)
-            self.player = None   
-    
+            self.player = None
+
     def ValidateAudioDevice(self, device):
         for dev in self.list_devices():
             if dev["name"] == device:
@@ -39,7 +39,7 @@ class WKAudio:
 
     def Terminate(self):
         self.StopAudio()
-        
+
     def list_devices(self):
         result = subprocess.run(
             ["pw-dump"],

@@ -6,7 +6,7 @@ import time
 import threading
 from dataclasses import dataclass
 
-# TODO: 
+# TODO:
 #       Monitor status messages from the Flex to determine if TX is allowed.
 #       Reflect that in status and TX state instead of assuming.
 #       C#|sub interlock all   (maybe not even needed)
@@ -32,7 +32,7 @@ class FlexRadio:
         self.listener = None
         self.handle = None
         self.version = None
-        
+
     def __del__(self):
         self.sock.close()
         if self.player is not None:
@@ -148,18 +148,18 @@ class FlexRadio:
                 disc[item[0]] = item[1]
             #print(disc)
             self.host = disc['ip']
-            self.port = int(disc['port'])            
-            #print(f'host: {self.host}, port: {self.port}')                                
+            self.port = int(disc['port'])
+            #print(f'host: {self.host}, port: {self.port}')
         sd.close()
 
     def Status(self):
         flex_status = self.rig_status
-        
+
         if self.tx == True:
             state = "TX"
         else:
             state = "RX"
-        
+
         return flex_status, state
 
     def Connect(self):
@@ -170,7 +170,7 @@ class FlexRadio:
         self.rig_status = "CONNECTED"
         #print(radio_info)
         self.StartStatusThread()
-        
+
     def StartStatusThread(self):
         self.listener = threading.Thread(target=self._status_listener, daemon=True)
         self.listener.start()

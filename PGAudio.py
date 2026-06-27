@@ -11,10 +11,10 @@ class PGAudio:
         self.volume = 1.0
         self.player_busy = False
         pygame.mixer.init()
-    
+
     def BackendName(self):
         return self.backend_name
-    
+
     def PollAudio(self):
         if self.player is not None:
             if self.player.get_busy() == False:
@@ -33,7 +33,7 @@ class PGAudio:
         self.player.set_volume(self.volume)
         self.player.play(s)
         self.player_busy = True
-    
+
     def StopAudio(self):
         if self.player is not None:
             self.player.stop()

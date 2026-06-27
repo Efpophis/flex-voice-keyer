@@ -73,11 +73,11 @@ def build_layout(settings):
 
     buttons = [sg.Push()]
     buttons.append(sg.Button('STOP', button_color=("black","red"), tooltip=" ESC ", key="Stop"))
-    
+
     for i in range(1,LABEL_MAX):
         buttons.append(sg.Button(settings[f'F{i}-label'], tooltip=f" F{i} ", key=f'Play::F{i}', visible=settings[f'F{i}-enabled']))
 
-    
+
     buttons.append(sg.Push())
 
     button_row= [buttons]
@@ -85,20 +85,20 @@ def build_layout(settings):
     layout = [
         [sg.Menu(menu_def)],
         [sg.Frame("Status", [
-            [ sg.Text("Rig:"), 
+            [ sg.Text("Rig:"),
               sg.Text("DISCONNECTED", justification="center", text_color="black", background_color="red", key="Rig::Status"),
-              sg.Text("RX", background_color="green", justification="center", text_color="black", key="Rig::State"), 
+              sg.Text("RX", background_color="green", justification="center", text_color="black", key="Rig::State"),
             ],
-            [sg.Text("Audio:"), sg.Text("NO DEVICE", text_color="black", background_color="red", 
+            [sg.Text("Audio:"), sg.Text("NO DEVICE", text_color="black", background_color="red",
                                         justification="center",key="Audio::Status"),
                                 sg.Text(settings['audio-dev'],justification="center", key="Audio::Dev")],
             [sg.Text("Backend:"), sg.Text(settings['audio-backend'], justification="center", key="Audio::Backend")]
-                                
+
         ],expand_x=True, expand_y=True)],
         [sg.Text("")],
         [sg.Text("Output Volume:  0"),
          sg.Slider((1,110), orientation='horizontal', disable_number_display=True,
-                    key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True), 
+                    key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True),
         sg.Text("11")],
         [sg.Frame('Macro Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Text("")],
@@ -116,8 +116,8 @@ def build_layout(settings):
 
 def about_box():
     version = 'v0.0.1'
-    sg.popup_ok(f"WK2X Flex Voice Keyer {version}", 
-                "A simple voice keyer for Flex Radios", 
+    sg.popup_ok(f"WK2X Flex Voice Keyer {version}",
+                "A simple voice keyer for Flex Radios",
                 "by Epophis@gitub https://github.com/Efpophis")
 
 def get_file(settings, keyp):
@@ -125,7 +125,7 @@ def get_file(settings, keyp):
 
     for i in range(1,LABEL_MAX):
         filemap[f'F{i}'] = settings[f'F{i}-audio']
-        
+
     return filemap[keyp]
 
 def audio_menu(settings):
@@ -133,10 +133,13 @@ def audio_menu(settings):
     devices = audio.list_devices()
     devChoice = sg.Combo(key='Dev::Name', values=[d['name'] for d in devices], default_value=settings['audio-dev'])
     beChoice = sg.Combo(key='Dev::Backend', values=['PyGame', 'pipewire'], enable_events=True, default_value=settings['audio-backend'])
+
     settings_layout = [
         [sg.Push(), sg.Text("Audio Backend: "), beChoice, sg.Push()],
         [sg.Push(), sg.Text("Device: "), devChoice, sg.Push()],
+        [sg.Checkbox("Link AetherSDR TX to PC Audio Input (use only on Linux/pipewire and AetherSDR < v26.6.x)", key="hackcheck", default=settings['audio-hack'], visible=audio.BackendName() == "PyGame")]
     ]
+
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
     window = sg.Window("WK2X Keyer - Audio Configuration", settings_layout, modal=True, finalize=True)
 
@@ -150,6 +153,7 @@ def audio_menu(settings):
             audio_be = get_audio_backend(values[event])
             devices = audio_be.list_devices()
             window['Dev::Name'].update(values=[d['name'] for d in devices], value=" ")
+            window['hackcheck'].update(visible=(audio_be.BackendName() == "PyGame"), default=settings['audio-hack'])
         elif event == 'Save':
             window.close()
             return save_audio_settings(settings, values), True
@@ -157,7 +161,7 @@ def audio_menu(settings):
 def macros_menu(settings):
     settings_layout = [[sg.Push(), sg.Text("Macro Configuration"), sg.Push()]]
     for i in range(1,LABEL_MAX):
-        settings_layout.append([sg.Push(), 
+        settings_layout.append([sg.Push(),
                                 sg.Checkbox("Enabled:", key=f'F{i}-enabled', default=settings[f'F{i}-enabled']),
                                 sg.Text(f"F{i} Label: "),
                                 sg.Input(key=f'F{i}-label', default_text=settings[f'F{i}-label']),
@@ -185,14 +189,14 @@ def rig_menu(settings):
                        [sg.Text("Pre-TX Delay: "), sg.Input(key='Rig::PreTXD', default_text=str(settings['rig-txpre-delay'])), sg.Push()],
                        [sg.Text("Post-Tx Delay:"), sg.Input(key='Rig::PosTXD', default_text=str(settings['rig-txpost-delay']))]
     ]
-    
+
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
-    
+
     window = sg.Window("WK2X Keyer - Rig Settings", settings_layout, modal=True, finalize=True)
-    
+
     while True:
         event, values = window.Read()
-        
+
         if event == sg.WIN_CLOSED or event == 'Cancel':
             window.close()
             return settings, False
@@ -215,15 +219,36 @@ def get_audio_backend(backend_name):
             audio = PGAudio()
     return audio
 
+def EnsureAudioPath(source, target, enabled):
+    links = subprocess.run(
+            ["pw-link", "-l"],
+            capture_output=True,
+            text=True
+        ).stdout
+    if enabled:
+        #print(f"links: {links}")
+        if source in links and target in links:
+            return
+
+        subprocess.run(["pw-link", source, target], check=False)
+    else:
+        if source in links and target in links:
+            subprocess.run(["pw-link", "-d", source, target], check=False)
+
 def save_audio_settings(settings, values):
     global audio
     settings['audio-dev'] = values['Dev::Name']
     settings['audio-backend'] = values['Dev::Backend']
+    settings['audio-hack'] = values["hackcheck"]
 
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
             audio.Terminate()
         audio = get_audio_backend(values['Dev::Backend'])
+
+    #print(f'{audio.BackendName()}, {settings["audio-hack"]}, {audio.device}')
+    if audio.BackendName() == "PyGame"  and audio.device == "AetherSDR TX":
+        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
 
     return settings
 
@@ -269,7 +294,10 @@ def run_gui(settings, layout, window, rig):
     device = settings['audio-dev']
     audio_status = audio.ValidateAudioDevice(device)
     counter = 0
-    
+
+    if audio.BackendName() == "PyGame" and audio.device == "AetherSDR TX":
+        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+
     while True:
         # see if audio has finished, and we need to un-key the rig
         if audio.PollAudio() == True:
@@ -277,17 +305,19 @@ def run_gui(settings, layout, window, rig):
             rig.UnkeyTX()
 
         flex_status, state = rig.Status()
-    
+
         if counter >= 20:
+            prev = audio_status
             audio_status = audio.ValidateAudioDevice(device)
+            window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
+            if prev != audio_status and audio_status == "READY":
+                if audio.BackendName() == "PyGame" and audio.device == "AetherSDR TX":
+                    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
             counter = 0
         else:
             counter += 1
-                
+
         update_status_indicators(window, flex_status, audio_status, state)
-        #window["Dev::Label"].update(visible=(audio_status=="READY"))
-        window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
-        
 
         event, values = window.read(timeout=50)
 
@@ -306,7 +336,7 @@ def run_gui(settings, layout, window, rig):
 
             if event == "About":
                 about_box()
-                
+
             if event == "Rig":
                 rig.UnkeyTX()
                 audio.StopAudio()
@@ -314,7 +344,7 @@ def run_gui(settings, layout, window, rig):
                 if updated == True:
                     rig.txd_pre = settings['rig-txpre-delay']
                     rig.txd_post = settings['rig-txpost-delay']
-                    
+
             if event == "Volume":
                 # normalise to 0..1.0
                 vol = values["Volume"] / 110.0
@@ -329,7 +359,7 @@ def run_gui(settings, layout, window, rig):
                     device = settings['audio-dev']
                     audio_status = audio.ValidateAudioDevice(device)
                     window["Audio::Backend"].update(settings['audio-backend'])
-                    
+
             if event == "Macros":
                 rig.UnkeyTX()
                 audio.StopAudio()
@@ -352,15 +382,18 @@ def _init_settings():
             settings[f'F{i}-label'] = f"F{i}"
         if settings[f'F{i}-enabled'] is None:
             settings[f'F{i}-enabled'] = True
-    
+
     if settings['rig-txpre-delay'] is None:
         settings['rig-txpre-delay'] = 0.1
 
     if settings['rig-txpost-delay'] is None:
         settings['rig-txpost-delay'] = 0.1
-        
+
     if settings['volume'] is None:
         settings['volume'] = 1.0
+
+    if settings['audio-hack'] is None:
+        settings['audio-hack'] = False
 
     #print(settings)
     return settings
@@ -370,14 +403,16 @@ def main(argv):
     global audio
     try:
         settings = _init_settings()
-        
+
         # set up audio backend
         if settings['audio-backend'] == "pipewire":
             audio = WKAudio()
         else:
             audio = PGAudio()
         audio.SetVolume(settings['volume'])
-        
+
+
+
         rig = FlexRadio()
         rig.Connect()
         rig.txd_pre = settings['rig-txpre-delay']
