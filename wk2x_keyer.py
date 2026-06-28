@@ -6,14 +6,16 @@ import sys
 import subprocess
 import os
 import json
-from FlexRadio import *
+#from FlexRadio import *
 import FreeSimpleGUI as sg
 import threading
-from WKAudio import *
+#from WKAudio import *
 from PGAudio import *
+from TCIAudio import *
 from wkicon import icon_b64
 
 audio = None
+#audio = TCIAudio()
 LABEL_MAX=13
 #audio = PGAudio()
 
@@ -54,11 +56,11 @@ def ipc_listener(window):
         finally:
             conn.close()
 
-def _voice_keyer(rig, device, file):
+def _voice_keyer(device, file):
     try:
-        rig.UnkeyTX()
+        #rig.UnkeyTX()
         audio.StopAudio()
-        rig.KeyTX()
+        #rig.KeyTX()
         audio.SendAudio(device, file)
 
     except Exception as e:
@@ -132,12 +134,12 @@ def audio_menu(settings):
     audio.StopAudio()
     devices = audio.list_devices()
     devChoice = sg.Combo(key='Dev::Name', values=[d['name'] for d in devices], default_value=settings['audio-dev'])
-    beChoice = sg.Combo(key='Dev::Backend', values=['PyGame', 'pipewire'], enable_events=True, default_value=settings['audio-backend'])
+    beChoice = sg.Combo(key='Dev::Backend', values=['PyGame', 'TCI'], enable_events=True, default_value=settings['audio-backend'])
 
     settings_layout = [
         [sg.Push(), sg.Text("Audio Backend: "), beChoice, sg.Push()],
         [sg.Push(), sg.Text("Device: "), devChoice, sg.Push()],
-        [sg.Checkbox("Link AetherSDR TX to PC Audio Input (use only on Linux/pipewire and AetherSDR < v26.6.x)", key="hackcheck", default=settings['audio-hack'], visible=audio.BackendName() == "PyGame")]
+        #[sg.Checkbox("Link AetherSDR TX to PC Audio Input (use only on Linux/pipewire and AetherSDR < v26.6.x)", key="hackcheck", default=settings['audio-hack'], visible=audio.BackendName() == "PyGame")]
     ]
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
@@ -153,7 +155,7 @@ def audio_menu(settings):
             audio_be = get_audio_backend(values[event])
             devices = audio_be.list_devices()
             window['Dev::Name'].update(values=[d['name'] for d in devices], value=" ")
-            window['hackcheck'].update(visible=(audio_be.BackendName() == "PyGame"), default=settings['audio-hack'])
+            #window['hackcheck'].update(visible=(audio_be.BackendName() == "PyGame"), default=settings['audio-hack'])
         elif event == 'Save':
             window.close()
             return save_audio_settings(settings, values), True
@@ -206,49 +208,55 @@ def rig_menu(settings):
             return save_rig_settings(settings, values), True
 
 def save_rig_settings(settings, values):
-    settings['rig-txpre-delay'] = float(values["Rig::PreTXD"])
-    settings['rig-txpost-delay'] = float(values["Rig::PosTXD"])
+    audio.txd_pre  = settings['rig-txpre-delay'] = float(values["Rig::PreTXD"])
+    audio.txd_post = settings['rig-txpost-delay'] = float(values["Rig::PosTXD"])
+
     return settings
 
 def get_audio_backend(backend_name):
     audio = None
     match backend_name:
-        case "pipewire":
-            audio = WKAudio()
+        case "TCI":
+            audio = TCIAudio()
         case "PyGame":
             audio = PGAudio()
     return audio
 
-def EnsureAudioPath(source, target, enabled):
-    links = subprocess.run(
-            ["pw-link", "-l"],
-            capture_output=True,
-            text=True
-        ).stdout
-    if enabled:
+#def EnsureAudioPath(source, target, enabled):
+#    links = subprocess.run(
+#            ["pw-link", "-l"],
+#            capture_output=True,
+#            text=True
+#        ).stdout
+#    if enabled:
         #print(f"links: {links}")
-        if source in links and target in links:
-            return
+#        if source in links and target in links:
+#            return
 
-        subprocess.run(["pw-link", source, target], check=False)
-    else:
-        if source in links and target in links:
-            subprocess.run(["pw-link", "-d", source, target], check=False)
+#        subprocess.run(["pw-link", source, target], check=False)
+#    else:
+#        if source in links and target in links:
+#            subprocess.run(["pw-link", "-d", source, target], check=False)
 
 def save_audio_settings(settings, values):
     global audio
     settings['audio-dev'] = values['Dev::Name']
     settings['audio-backend'] = values['Dev::Backend']
-    settings['audio-hack'] = values["hackcheck"]
+    #settings['audio-hack'] = values["hackcheck"]
 
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
             audio.Terminate()
         audio = get_audio_backend(values['Dev::Backend'])
+        match audio.BackendName():
+            case "TCI":
+                audio.Initialize(settings['tci-host'], settings['tci-port'])
+            case "PyGame":
+                audio.Initialize(None, None)
 
     #print(f'{audio.BackendName()}, {settings["audio-hack"]}, {audio.device}')
-    if audio.BackendName() == "PyGame"  and audio.device == "AetherSDR TX":
-        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+    #if audio.BackendName() == "PyGame"  and audio.device == "AetherSDR TX":
+    #    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
 
     return settings
 
@@ -290,29 +298,29 @@ def update_status_indicators(window, flex_status, audio_status, state):
     window["Rig::State"].update(state, visible=(flex_status == "READY"), background_color=STATUS_COLORS[state])
     window["Audio::Status"].update(audio_status,background_color=STATUS_COLORS[audio_status])
 
-def run_gui(settings, layout, window, rig):
+def run_gui(settings, layout, window):
     device = settings['audio-dev']
     audio_status = audio.ValidateAudioDevice(device)
     counter = 0
 
-    if audio.BackendName() == "PyGame" and audio.device == "AetherSDR TX":
-        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+    #if audio.BackendName() == "PyGame" and audio.device == "AetherSDR TX":
+    #    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
 
     while True:
         # see if audio has finished, and we need to un-key the rig
         if audio.PollAudio() == True:
-            time.sleep(0.1)
-            rig.UnkeyTX()
+            #time.sleep(0.1)
+            audio.StopAudio()
 
-        flex_status, state = rig.Status()
+        flex_status, state = audio.Status()
 
         if counter >= 20:
             prev = audio_status
             audio_status = audio.ValidateAudioDevice(device)
             window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
-            if prev != audio_status and audio_status == "READY":
-                if audio.BackendName() == "PyGame" and audio.device == "AetherSDR TX":
-                    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+            #if prev != audio_status and audio_status == "READY":
+            #    if audio.BackendName() == "PyGame" and audio.device == "AetherSDR TX":
+            #        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
             counter = 0
         else:
             counter += 1
@@ -328,22 +336,22 @@ def run_gui(settings, layout, window, rig):
                 keyp = event[6:]
                 file = get_file(settings, keyp)
                 if file != "" and audio_status == "READY":
-                    _voice_keyer(rig, device, file)
+                    _voice_keyer(device, file)
 
             if event == "Stop":
-                rig.UnkeyTX()
+#                rig.UnkeyTX()
                 audio.StopAudio()
 
             if event == "About":
                 about_box()
 
             if event == "Rig":
-                rig.UnkeyTX()
+#                rig.UnkeyTX()
                 audio.StopAudio()
                 settings, updated = rig_menu(settings)
                 if updated == True:
-                    rig.txd_pre = settings['rig-txpre-delay']
-                    rig.txd_post = settings['rig-txpost-delay']
+                    audio.txd_pre = settings['rig-txpre-delay']
+                    audio.txd_post = settings['rig-txpost-delay']
 
             if event == "Volume":
                 # normalise to 0..1.0
@@ -352,16 +360,17 @@ def run_gui(settings, layout, window, rig):
                 audio.SetVolume(vol)
 
             if event == "Audio":
-                rig.UnkeyTX()
+#                rig.UnkeyTX()
                 audio.StopAudio()
                 settings, updated = audio_menu(settings)
                 if updated == True:
                     device = settings['audio-dev']
                     audio_status = audio.ValidateAudioDevice(device)
+                    audio.Initialize()
                     window["Audio::Backend"].update(settings['audio-backend'])
 
             if event == "Macros":
-                rig.UnkeyTX()
+  #              rig.UnkeyTX()
                 audio.StopAudio()
                 settings, updated = macros_menu(settings)
                 if updated == True:
@@ -372,10 +381,15 @@ def _init_settings():
     config_dir = os.path.join(os.path.expanduser("~"), ".config", "wk2x-voice-keyer")
     settings = sg.UserSettings('voice-keyer.conf', config_dir)
     if settings['audio-dev'] is None:
-        settings['audio-dev'] = "AetherSDR"
+        settings['audio-dev'] = "TCI (AetherSDR)"
 
     if settings['audio-backend'] is None:
-        settings['audio-backend'] = "pipewire"
+        settings['audio-backend'] = "TCI"
+    
+    if settings['tci-host'] is None:
+        settings['tci-host'] = "localhost"
+    if settings['tci-port'] is None:
+        settings['tci-port'] = 50001
 
     for i in range(1,LABEL_MAX):
         if settings[f'F{i}-label'] is None:
@@ -392,9 +406,6 @@ def _init_settings():
     if settings['volume'] is None:
         settings['volume'] = 1.0
 
-    if settings['audio-hack'] is None:
-        settings['audio-hack'] = False
-
     #print(settings)
     return settings
 
@@ -405,18 +416,20 @@ def main(argv):
         settings = _init_settings()
 
         # set up audio backend
-        if settings['audio-backend'] == "pipewire":
-            audio = WKAudio()
-        else:
-            audio = PGAudio()
+        match settings['audio-backend']:
+            case "PyGame":
+                audio = PGAudio()
+                audio.Initialize(None, None)
+            case "TCI":
+                audio = TCIAudio()
+                audio.Initialize(settings['tci-host'], settings['tci-port'])
+        
         audio.SetVolume(settings['volume'])
 
-
-
-        rig = FlexRadio()
-        rig.Connect()
-        rig.txd_pre = settings['rig-txpre-delay']
-        rig.txd_post = settings['rig-txpost-delay']
+#        rig = FlexRadio()
+#        rig.Connect()
+        audio.txd_pre = settings['rig-txpre-delay']
+        audio.txd_post = settings['rig-txpost-delay']
 
         layout, window = build_layout(settings)
 
@@ -427,12 +440,12 @@ def main(argv):
         )
         t.start()
 
-        run_gui(settings, layout, window, rig)
+        run_gui(settings, layout, window)
     except Exception as e:
         print(f"Error: {e}")
         ret = 1
     finally:
-        rig.UnkeyTX()
+ #       rig.UnkeyTX()
         audio.StopAudio()
         sys.exit(ret)
 
