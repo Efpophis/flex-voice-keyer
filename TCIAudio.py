@@ -16,6 +16,8 @@ class TCIAudio:
         self.player_busy = False
         self.txd_pre = 0.1
         self.txd_post = 0.1
+        self.rig_status = "OFFLINE"
+        self.tx_status = "RX"
         
         # Threading and synchronization structures
         self.audio_data_buffer = bytearray()
@@ -31,12 +33,14 @@ class TCIAudio:
         self.header_format = "<16I"
         self.packet_cache = {}
         self.audio_duration = 0
+        self.tx_stream_start = 0
+        self.tx_idx = 0
 
     def BackendName(self):
         return self.backend_name
 
     def Status(self):
-        return "READY", "RX"
+        return self.rig_status, self.tx_status
     
     def Initialize(self, host='localhost', port=5001):
         """Configures the target connection profile and provisions the background networking pipeline."""
@@ -65,7 +69,7 @@ class TCIAudio:
             daemon=True
         )
         self.persistent_thread.start()
-        return "READY"
+
 
     def PollAudio(self):
         """Returns True if the transmission ended or was aborted during this tick."""
@@ -85,14 +89,6 @@ class TCIAudio:
             self.StopAudio()
 
         try:
-            # 1. Format the audio file to standard 48kHz 16-bit Mono PCM
-            #audio = AudioSegment.from_file(file)
-            #audio = audio.set_frame_rate(self.sample_rate).set_channels(1).set_sample_width(2)
-            #raw_pcm = bytearray(audio.raw_data)
-            
-            # 2. Apply volume slider attenuation scaling configurations
-            #processed_pcm = self._adjust_volume(raw_pcm, self.volume)
-            
             # 3. Swap the buffer data and trip the thread triggers safely
             self.audio_data_buffer, self.audio_duration = self.load_tci_audio(file, 
                                                             sample_rate=self.sample_rate,
@@ -106,6 +102,7 @@ class TCIAudio:
         except Exception as e:
             print(f"TCI Audio Queue Error: {e}")
             self.player_busy = False
+            raise
 
     def StopAudio(self):
         """Instantly flags the background async engine to cancel active audio transmission loops."""
@@ -139,50 +136,102 @@ class TCIAudio:
             self.persistent_thread.join(timeout=1.5)
             self.persistent_thread = None
 
-    # --- Internal Thread & Asynchronous Socket Core ---
-
-    #def _adjust_volume(self, pcm_bytes, factor):
-    #    """Modifies volume scales from 0.0 (silent) to 1.0 (unmodified WAV)."""
-    #    factor = max(0.0, min(1.0, float(factor)))
-    #    if factor == 1.0:
-    #        return pcm_bytes
-    #    if factor == 0.0:
-    #        return bytearray(len(pcm_bytes))
-
-    #    num_samples = len(pcm_bytes) // 2
-    #    samples = struct.unpack(f"<{num_samples}h", pcm_bytes)
-    #    adjusted = [int(s * factor) for s in samples]
-    #    return bytearray(struct.pack(f"<{num_samples}h", *adjusted))
-
     def _start_persistent_worker(self):
         """Thread worker starting a dedicated asyncio context event loop."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._network_lifecycle_manager())
+            #loop.run_until_complete(self._network_lifecycle_manager())
+            loop.run_until_complete(self._network_loop())
         finally:
             loop.close()
 
-    async def _network_lifecycle_manager(self):
+    async def _network_loop(self):
         """Maintains the connection loop, handling automated reconselfnects on network drops."""
         while not self.stop_network_thread.is_set():
+            idx = 0
             try:
                 print(f"TCI Persistent: Establishing connection to {self.tci_uri}...")
                 async with websockets.connect(self.tci_uri) as ws:
                     print("TCI Persistent: Connected and hot-standby active.")
+                    self.rig_status = "CONNECTED"
+                    await ws.send(f'TRX:{self.trx_index};')
                     while not self.stop_network_thread.is_set():
                         if self.tx_trigger.is_set():
                             self.tx_trigger.clear()
-                            await self._stream_active_audio(ws)
-                            
+                            self.player_busy = True
+                            self.tx_idx = 0
+                            # ASSERT PTT INSTANTLY (The connection is already alive!)
+                            await ws.send(f"TRX:{self.trx_index},true,tci;")
+                            if self.txd_pre > 0.0:
+                                await asyncio.sleep(self.txd_pre)
+
+                            flushed = await self.flush_pending(ws)
+                            self.tx_stream_start = time.monotonic()
+
+                        try:
+                            packet = await asyncio.wait_for(ws.recv(), timeout=0.05)
+                            if isinstance(packet, bytes) and len(packet) >= 64:
+                                tx_done = await self._handle_sync_packet(packet, ws)
+                                if tx_done or self.abort_trigger.is_set():
+                                    await ws.send(f"TRX:{self.trx_index},false;")
+                                    end_flush = await self.flush_pending(ws)
+                                    self.player_busy = False
+                            elif isinstance(packet, str):
+                                await self._handle_text_packet(packet, ws)
+                        except asyncio.TimeoutError:
+                            pass
+                        except Exception as e:
+                            raise
+
                         await asyncio.sleep(0.01)
-                        
+
             except (websockets.ConnectionClosed, OSError) as conn_err:
                 # Only log error and sleep if we aren't intentionally shutting down the thread
                 if not self.stop_network_thread.is_set():
                     print(f"TCI Persistent Link Dropped ({conn_err}). Reconnecting in 3s...")
                     self.player_busy = False
+                    self.rig_status = "DISCONNECTED"
                     await asyncio.sleep(3)
+            except Exception as e:
+                print("Exception 2 in _network_loop(): {e}")
+                raise
+
+    async def _handle_sync_packet(self, packet, ws):
+        header = struct.unpack(self.header_format, packet[:64])
+        if header[6] == 3:  # TYPE_TX_CHRONO
+            if self.tx_idx < len(self.audio_data_buffer):
+                await ws.send(self.audio_data_buffer[self.tx_idx])
+                self.tx_idx += 1
+            else:
+                elapsed = time.monotonic() - self.tx_stream_start
+                if elapsed < self.audio_duration:
+                    await asyncio.sleep(self.audio_duration - elapsed)
+
+                if self.txd_post > 0:
+                    await asyncio.sleep(self.txd_post)
+                return True
+        else:
+            print(f'got weird packet: {header}')
+
+        return False
+
+    async def _handle_text_packet(self, packet, ws):
+        packet = packet.strip()
+#        print(f'TCI: {packet}')
+
+        if packet.startswith("tx_enable:"):
+            if "true" in packet:
+                self.rig_status = "READY"
+            else:
+                self.rig_status = "STANDBY"
+
+        if packet.startswith("trx:"):
+            if "true" in packet:
+                self.tx_status = "TX"
+            else:
+                self.tx_status = "RX"
+
 
     def load_tci_audio(self, path : str, 
                        trx_index: int = 0,
@@ -192,7 +241,7 @@ class TCIAudio:
         if path in self.packet_cache:
             print(f"using cached buffer for {path}")
             return self.packet_cache[path]['buffer'], self.packet_cache[path]['duration']
-        
+
         FORMAT = 0 #PCM16
         TYPE_TX_AUDIO_STREAM = 2
         num_silent_packets = 6
@@ -234,7 +283,7 @@ class TCIAudio:
             )
 
             packets.append(header + chunk)
-        
+
         quiet = bytes(bytes_per_packet)
         silence = header + quiet
         packets.extend([silence] * num_silent_packets)
@@ -243,7 +292,6 @@ class TCIAudio:
                                   frame_rate=sample_rate,
                                   channels=1)
         duration += a.duration_seconds * num_silent_packets
-        #duration += self.txd_post
         self.packet_cache[path] = { "buffer": packets, "duration": duration }
         print(f"cached {path} with duration {duration}")
         return packets, duration
@@ -256,58 +304,3 @@ class TCIAudio:
                 flushed += 1
             except asyncio.TimeoutError:
                 return flushed
-            
-    async def _stream_active_audio(self, ws):
-        """Streams the pre-allocated data matrix over the active socket session with zero handshake lag."""
-        idx = 0
-        audio_length = len(self.audio_data_buffer)
-        
-        try:
-            # ASSERT PTT INSTANTLY (The connection is already alive!)
-            await ws.send(f"TRX:{self.trx_index},true,tci;")
-            if self.txd_pre > 0.0:
-                await asyncio.sleep(self.txd_pre)
-            timeouts = 0
-            flushed = await self.flush_pending(ws)
-            
-            tx_stream_start = time.monotonic()
-            
-            while idx < audio_length and not self.stop_network_thread.is_set():
-                if self.abort_trigger.is_set():
-                    print("TCI Persistent: Playback transmission sequence aborted!")
-                    break                
-                try:                    
-                    packet = await asyncio.wait_for(ws.recv(), timeout=0.05)
-                except asyncio.TimeoutError:
-                    timeouts += 1
-                if isinstance(packet, bytes) and len(packet) >= 64:
-                    header = struct.unpack(self.header_format, packet[:64])
-
-                    if header[6] == 3:  # TYPE_TX_CHRONO
-                        await ws.send(self.audio_data_buffer[idx])
-                        idx += 1
-
-            if not self.abort_trigger.is_set() and not self.stop_network_thread.is_set():
-                elapsed = time.monotonic() - tx_stream_start
-                if elapsed < self.audio_duration:
-                    await asyncio.sleep(self.audio_duration - elapsed)
-                await asyncio.sleep(0.20)
-
-        except Exception as tx_err:
-            print(f"TCI Persistent Stream Error: {tx_err}")
-        finally:
-            # DROP PTT IMMEDIATELY
-            try:    
-                print(f'txt_post = {self.txd_post}')
-                if self.txd_post > 0:
-                    print('waiting...')
-                    await asyncio.sleep(self.txd_post)
-                await ws.send(f"TRX:{self.trx_index},false;")
-                end_flush = await self.flush_pending(ws)
-            except Exception as e:
-                print(f'ended tx with error {e}')
-                pass
-            print(f'finished with timeouts = {timeouts}')
-            print(f'flushed before = {flushed}')
-            print(f'flushed after = {end_flush}')
-            self.audio_data_buffer = bytearray()

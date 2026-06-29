@@ -26,7 +26,7 @@ class FlexRadio:
         self.seq = 1
         self.sock = ClientSocket()
         self.tx = False
-        self.rig_status = "DISCONNECTED"
+        self.rig_status = "OFFLINE"
         self.txd_pre = 0
         self.txd_post = 0
         self.listener = None
@@ -129,6 +129,7 @@ class FlexRadio:
             except Exception as e:
                 print(f"Socket error: {e}")
                 self.listener = None
+                raise
         mysock.close()
         print("FlexRadio: status thread finished.")
 
@@ -141,15 +142,12 @@ class FlexRadio:
         data, addr = sd.recvfrom(4096)
         if len(data) > 7:
             string = data[28:].decode()
-            #print(string)
             ps = string.split(' ')
             for s in ps:
                 item = s.split('=')
                 disc[item[0]] = item[1]
-            #print(disc)
             self.host = disc['ip']
             self.port = int(disc['port'])
-            #print(f'host: {self.host}, port: {self.port}')
         sd.close()
 
     def Status(self):
@@ -168,7 +166,6 @@ class FlexRadio:
         self.sock.connect(self.host, self.port)
         radio_info=self.sock.empty()
         self.rig_status = "CONNECTED"
-        #print(radio_info)
         self.StartStatusThread()
 
     def StartStatusThread(self):
@@ -186,11 +183,9 @@ class FlexRadio:
     def KeyTX(self):
         cmd = f"xmit 1"
         self.SendCmd(cmd)
-        #self.tx = True
         time.sleep(self.txd_pre)
 
     def UnkeyTX(self):
         cmd = "xmit 0"
         self.SendCmd(cmd)
-        #self.tx = False
         time.sleep(self.txd_post)
