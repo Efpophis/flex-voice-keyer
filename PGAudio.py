@@ -80,6 +80,7 @@ class PGAudio:
         self.player = None
         self.player_busy = False
         pygame.mixer.quit()
+        self.rig.Terminate()
 
     def list_devices(self):
         devices = []

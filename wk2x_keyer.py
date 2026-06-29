@@ -223,7 +223,7 @@ def save_audio_settings(settings, values):
     global audio
     settings['audio-dev'] = values['Dev::Name']
     settings['audio-backend'] = values['Dev::Backend']
-   
+
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
             audio.Terminate()
@@ -334,7 +334,7 @@ def run_gui(settings, layout, window):
                 if updated == True:
                     device = settings['audio-dev']
                     audio_status = audio.ValidateAudioDevice(device)
-                    audio.Initialize()
+                    #audio.Initialize()
                     window["Audio::Backend"].update(settings['audio-backend'])
 
             if event == "Macros":

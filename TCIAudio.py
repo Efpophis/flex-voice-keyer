@@ -42,7 +42,7 @@ class TCIAudio:
     def Status(self):
         return self.rig_status, self.tx_status
     
-    def Initialize(self, host='localhost', port=5001):
+    def Initialize(self, host='localhost', port=50001):
         """Configures the target connection profile and provisions the background networking pipeline."""
         target_uri = f"ws://{host}:{port}"
         

@@ -32,14 +32,21 @@ class FlexRadio:
         self.listener = None
         self.handle = None
         self.version = None
+        self.listener_running = False
 
     def __del__(self):
-        self.sock.close()
-        if self.player is not None:
-            self.player.terminate()
-        if self.listern is not None:
-            self.listener = None
+        self.Terminate()
+        self.sock = None
 
+    def Terminate(self):
+        self.sock.close()
+        self.host = ""
+        self.port = 0
+        self.seq = 1
+        if self.listener_running:
+            self.listener_running = False
+            self.listener.join(timeout=0.4)
+        
     def parse_flex_status(self, line: str) -> FlexStatus:
         line = line.strip()
 
@@ -83,7 +90,8 @@ class FlexRadio:
         mysock = ClientSocket()
         mysock.connect(self.host, self.port)
         mysock.settimeout(1)
-        while self.listener is not None:
+        self.listener_running = True
+        while self.listener_running:
             try:
                 msg = mysock.read_until(b'\n').decode('utf-8')
 
@@ -128,7 +136,7 @@ class FlexRadio:
                 continue
             except Exception as e:
                 print(f"Socket error: {e}")
-                self.listener = None
+                self.listener_running = False
                 raise
         mysock.close()
         print("FlexRadio: status thread finished.")
@@ -161,8 +169,10 @@ class FlexRadio:
         return flex_status, state
 
     def Connect(self):
+        print(f"self.host == {self.host}, self.port == {self.port}")
         if self.port == 0:
             self.Discover()
+        
         self.sock.connect(self.host, self.port)
         radio_info=self.sock.empty()
         self.rig_status = "CONNECTED"
