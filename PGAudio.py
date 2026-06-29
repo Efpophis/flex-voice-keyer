@@ -16,7 +16,7 @@ class PGAudio:
         self.rig = FlexRadio()
         pygame.mixer.init()
 
-    def Initialize(self, host, port):
+    def Initialize(self, host=None, port=None):
         if host is not None and port is not None:
             self.rig.host = host
             self.rig.port = port

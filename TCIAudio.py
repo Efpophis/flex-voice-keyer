@@ -34,7 +34,7 @@ class TCIAudio:
     def Status(self):
         return "READY", "RX"
     
-    def Initialize(self, host, port):
+    def Initialize(self, host='localhost', port=5001):
         """Configures the target connection profile and provisions the background networking pipeline."""
         target_uri = f"ws://{host}:{port}"
         
@@ -91,8 +91,8 @@ class TCIAudio:
             
             # 3. Swap the buffer data and trip the thread triggers safely
             self.audio_data_buffer = self.load_tci_audio(file, 
-                                                         self.sample_rate,
-                                                         self.volume)
+                                                         sample_rate=self.sample_rate,
+                                                         volume=self.volume)
             self.abort_trigger.clear()
             self.player_busy = True
             
@@ -106,6 +106,7 @@ class TCIAudio:
     def StopAudio(self):
         """Instantly flags the background async engine to cancel active audio transmission loops."""
         if self.player_busy:
+            print("aborting")
             self.abort_trigger.set()
             self.tx_trigger.clear()
             self.audio_data_buffer = bytearray()
@@ -159,7 +160,7 @@ class TCIAudio:
             loop.close()
 
     async def _network_lifecycle_manager(self):
-        """Maintains the connection loop, handling automated reconnects on network drops."""
+        """Maintains the connection loop, handling automated reconselfnects on network drops."""
         while not self.stop_network_thread.is_set():
             try:
                 print(f"TCI Persistent: Establishing connection to {self.tci_uri}...")
@@ -179,32 +180,70 @@ class TCIAudio:
                     self.player_busy = False
                     await asyncio.sleep(3)
 
-    def load_tci_audio(self, path, sample_rate=48000, volume=1.0) -> bytes:
+    def load_tci_audio(self, path : str, 
+                       trx_index: int = 0,
+                       sample_rate: int = 48000,
+                       samples_per_packet: int = 2048,
+                       volume=1.0) -> list[bytes]:
+        FORMAT = 0 #PCM16
+        TYPE_TX_AUDIO_STREAM = 2
+        num_silent_packets = 6
+        
         audio = AudioSegment.from_file(path)
 
-        # Force what TCI is asking for
         audio = (
             audio
             .set_frame_rate(sample_rate)
-            .set_channels(2)
-            .set_sample_width(2)   # pydub gives us int16 PCM
+            .set_channels(1)
+            .set_sample_width(2)   # 16-bit signed PCM
         )
 
-        samples = array.array("h")
-        samples.frombytes(audio.raw_data)
+        pcm = audio.raw_data
 
-        # pydub gives native-endian signed 16-bit; convert to float32 -1.0..1.0
-        out = bytearray()
-        factor = max(0.0, min(1.0, float(volume))) / 32768.0
+        channels = 1
+        bytes_per_sample = 2
+        bytes_per_packet = samples_per_packet * channels * bytes_per_sample
 
-        for s in samples:
-            out += struct.pack("<f", s * factor)
+        packets = []
 
-        return bytes(out)
-    
+        for pos in range(0, len(pcm), bytes_per_packet):
+            chunk = pcm[pos:pos + bytes_per_packet]
+
+            if len(chunk) < bytes_per_packet:
+                chunk = chunk.ljust(bytes_per_packet, b"\x00")
+
+            header = struct.pack(
+                self.header_format,
+                trx_index,
+                sample_rate,
+                FORMAT,
+                0,
+                0,
+                samples_per_packet,
+                TYPE_TX_AUDIO_STREAM,
+                1,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+
+            packets.append(header + chunk)
+        
+        silence = header + bytes(bytes_per_packet)
+        packets.extend([silence] * num_silent_packets)
+
+        return packets
+
+    async def flush_pending(self, ws):
+        flushed = 0
+        while True:
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=0.001)
+                flushed += 1
+            except asyncio.TimeoutError:
+                return flushed
+            
     async def _stream_active_audio(self, ws):
         """Streams the pre-allocated data matrix over the active socket session with zero handshake lag."""
-        byte_pointer = 0
+        idx = 0
         audio_length = len(self.audio_data_buffer)
         
         try:
@@ -212,72 +251,44 @@ class TCIAudio:
             await ws.send(f"TRX:{self.trx_index},true,tci;")
             if self.txd_pre > 0.0:
                 await asyncio.sleep(self.txd_pre)
+            timeouts = 0
+            flushed = await self.flush_pending(ws)
             
-            while byte_pointer < audio_length and not self.stop_network_thread.is_set():
+            while idx < audio_length and not self.stop_network_thread.is_set():
                 if self.abort_trigger.is_set():
                     print("TCI Persistent: Playback transmission sequence aborted!")
-                    break
-                
-                try:
-                    packet = await asyncio.wait_for(ws.recv(), timeout=0.04)
+                    break                
+                try:                    
+                    packet = await asyncio.wait_for(ws.recv(), timeout=0.05)
                 except asyncio.TimeoutError:
-                    continue
-
+                    timeouts += 1
                 if isinstance(packet, bytes) and len(packet) >= 64:
                     header = struct.unpack(self.header_format, packet[:64])
-                   # print(header)
-                    stream_type = header[6]
-                    requested_samples = header[5]
-                    channels = header[7]
-                    sample_rate = header[1]
-                    sample_format = header[2]
-                    bytes_per_sample = 4  # float32
-                    
+
                     #print("TCI header:", header)
                     #print("requested_samples:", requested_samples, "stream_type:", stream_type)
-                    if stream_type == 3:  # TYPE_TX_CHRONO
-                        if sample_format != 3:
-                            print(f"Unexpected TCI sample format: {sample_format}")
-                            continue
-                        needed_bytes = requested_samples * bytes_per_sample * channels
-                        chunk = self.audio_data_buffer[byte_pointer : byte_pointer + needed_bytes]
-                        actual_samples = len(chunk) // (bytes_per_sample * channels)
-                        print(f"requested samples = {requested_samples}")
-                        print(f"needed bytes = {needed_bytes}, actual samples = {actual_samples}")
-                        
-                        if len(chunk) < needed_bytes:
-                            chunk = chunk.ljust(needed_bytes, b'\x00')
-                            actual_samples = requested_samples
-                        
-                        tx_packet = struct.pack(
-                            self.header_format, 
-                            self.trx_index, 
-                            self.sample_rate, 
-                            sample_format,  # should be float32
-                            0,
-                            0, 
-                            actual_samples, 
-                            2,    # TX_AUDIO_STREAM
-                            channels,
-                            0, 0, 0, 0, 0, 0, 0, 0
-                        ) + chunk
-                        
-                        await ws.send(tx_packet)
-                        byte_pointer += needed_bytes
+                    if header[6] == 3:  # TYPE_TX_CHRONO
+                        await ws.send(self.audio_data_buffer[idx])
+                        idx += 1
 
-            #if not self.abort_trigger.is_set() and not self.stop_network_thread.is_set():
-            #    await asyncio.sleep(0.20)
-            
-            if self.txd_post > 0:
-                await asyncio.sleep(self.txd_post)
+            if not self.abort_trigger.is_set() and not self.stop_network_thread.is_set():
+                await asyncio.sleep(0.20)
 
         except Exception as tx_err:
             print(f"TCI Persistent Stream Error: {tx_err}")
         finally:
             # DROP PTT IMMEDIATELY
             try:    
+                print(f'txt_post = {self.txd_post}')
+                if self.txd_post > 0:
+                    print('waiting...')
+                    await asyncio.sleep(self.txd_post)
                 await ws.send(f"TRX:{self.trx_index},false;")
-            except Exception:
+                end_flush = await self.flush_pending(ws)
+            except Exception as e:
+                print(f'ended tx with error {e}')
                 pass
-            
+            print(f'finished with timeouts = {timeouts}')
+            print(f'flushed before = {flushed}')
+            print(f'flushed after = {end_flush}')
             self.audio_data_buffer = bytearray()
