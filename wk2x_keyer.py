@@ -131,12 +131,22 @@ def get_file(settings, keyp):
 def audio_menu(settings):
     audio.StopAudio()
     devices = audio.list_devices()
-    devChoice = sg.Combo(key='Dev::Name', values=[d['name'] for d in devices], default_value=settings['audio-dev'])
+    devChoice = sg.Combo(key='Dev::Name', 
+                         values=[d['name'] for d in devices], 
+                         default_value=settings['audio-dev'],
+                         visible=(settings['audio-backend'] == "PyGame")
+                        )
     beChoice = sg.Combo(key='Dev::Backend', values=['PyGame', 'TCI'], enable_events=True, default_value=settings['audio-backend'])
 
     settings_layout = [
         [sg.Push(), sg.Text("Audio Backend: "), beChoice, sg.Push()],
-        [sg.Push(), sg.Text("Device: "), devChoice, sg.Push()],
+        [sg.Push(), sg.Text("Device: ", key="Dev::PGl", visible=(settings['audio-backend'] == "PyGame")), devChoice, sg.Push()],
+        [sg.Text("TCI Host:", key="Dev::TCIhl", visible=(settings['audio-backend'] == "TCI")),
+         sg.Input(key='TCI::Host', default_text=settings['tci-host'], visible=(settings['audio-backend'] == "TCI")),
+         sg.Push()],
+        [sg.Text("TCI Port:", key="Dev::TCIpl", visible=(settings['audio-backend'] == "TCI")),
+         sg.Input(key='TCI::Port', default_text=settings['tci-port'], visible=(settings['audio-backend'] == "TCI"))
+         ]
     ]
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
@@ -151,8 +161,16 @@ def audio_menu(settings):
         elif event == "Dev::Backend":
             audio_be = get_audio_backend(values[event])
             devices = audio_be.list_devices()
-            window['Dev::Name'].update(values=[d['name'] for d in devices], value=" ")
-            #window['hackcheck'].update(visible=(audio_be.BackendName() == "PyGame"), default=settings['audio-hack'])
+            be_name = audio_be.BackendName()
+            
+            window['Dev::PGl'].update(visible=(be_name == "PyGame"))
+            window['Dev::Name'].update(values=[d['name'] for d in devices], visible=(be_name == "PyGame"), value=" ")
+            
+            window['Dev::TCIhl'].update(visible=(be_name == "TCI"))
+            window['TCI::Host'].update(visible=(be_name == "TCI"))
+            window['Dev::TCIpl'].update(visible=(be_name == "TCI"))
+            window['TCI::Port'].update(visible=(be_name == "TCI"))
+
         elif event == 'Save':
             window.close()
             return save_audio_settings(settings, values), True
@@ -221,9 +239,10 @@ def get_audio_backend(backend_name):
 
 def save_audio_settings(settings, values):
     global audio
-    settings['audio-dev'] = values['Dev::Name']
+    
     settings['audio-backend'] = values['Dev::Backend']
-
+    settings['audio-dev'] = values['Dev::Name']
+    
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
             audio.Terminate()
@@ -231,6 +250,7 @@ def save_audio_settings(settings, values):
         match audio.BackendName():
             case "TCI":
                 audio.Initialize(settings['tci-host'], settings['tci-port'])
+                settings['audio-dev'] = audio.list_devices()[0]['name']
             case "PyGame":
                 audio.Initialize(None, None)
 
@@ -274,9 +294,10 @@ def update_status_indicators(window, flex_status, audio_status, state):
     window['Rig::Status'].update(flex_status, background_color=STATUS_COLORS[flex_status])
     window["Rig::State"].update(state, visible=(flex_status == "READY"), background_color=STATUS_COLORS[state])
     window["Audio::Status"].update(audio_status,background_color=STATUS_COLORS[audio_status])
-
+    
 def run_gui(settings, layout, window):
     device = settings['audio-dev']
+    print(f"audio device {device}")
     audio_status = audio.ValidateAudioDevice(device)
     counter = 0
 
@@ -309,26 +330,26 @@ def run_gui(settings, layout, window):
                 if file != "" and audio_status == "READY":
                     _voice_keyer(device, file)
 
-            if event == "Stop":
+            elif event == "Stop":
                 audio.StopAudio()
 
-            if event == "About":
+            elif event == "About":
                 about_box()
 
-            if event == "Rig":
+            elif event == "Rig":
                 audio.StopAudio()
                 settings, updated = rig_menu(settings)
                 if updated == True:
                     audio.txd_pre = settings['rig-txpre-delay']
                     audio.txd_post = settings['rig-txpost-delay']
 
-            if event == "Volume":
+            elif event == "Volume":
                 # normalise to 0..1.0
                 vol = values["Volume"] / 110.0
                 settings['volume'] = vol
                 audio.SetVolume(vol)
 
-            if event == "Audio":
+            elif event == "Audio":
                 audio.StopAudio()
                 settings, updated = audio_menu(settings)
                 if updated == True:
@@ -337,12 +358,16 @@ def run_gui(settings, layout, window):
                     #audio.Initialize()
                     window["Audio::Backend"].update(settings['audio-backend'])
 
-            if event == "Macros":
+            elif event == "Macros":
                 audio.StopAudio()
                 settings, updated = macros_menu(settings)
                 if updated == True:
                     for i in range(1,LABEL_MAX):
                         window[f'Play::F{i}'].update(settings[f'F{i}-label'], visible=settings[f'F{i}-enabled'])
+            elif event == "__TIMEOUT__":
+                continue
+            else:
+                print(event)
 
 def _init_settings():
     config_dir = os.path.join(os.path.expanduser("~"), ".config", "wk2x-voice-keyer")

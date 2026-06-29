@@ -169,7 +169,6 @@ class FlexRadio:
         return flex_status, state
 
     def Connect(self):
-        print(f"self.host == {self.host}, self.port == {self.port}")
         if self.port == 0:
             self.Discover()
         
