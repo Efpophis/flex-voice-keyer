@@ -4,8 +4,10 @@ import asyncio
 import websockets
 import struct
 import threading
+import io
 from pydub import AudioSegment
 import array
+import time
 
 class TCIAudio:
     def __init__(self):
@@ -27,6 +29,8 @@ class TCIAudio:
         self.trx_index = 0
         self.sample_rate = 48000
         self.header_format = "<16I"
+        self.packet_cache = {}
+        self.audio_duration = 0
 
     def BackendName(self):
         return self.backend_name
@@ -90,9 +94,9 @@ class TCIAudio:
             #processed_pcm = self._adjust_volume(raw_pcm, self.volume)
             
             # 3. Swap the buffer data and trip the thread triggers safely
-            self.audio_data_buffer = self.load_tci_audio(file, 
-                                                         sample_rate=self.sample_rate,
-                                                         volume=self.volume)
+            self.audio_data_buffer, self.audio_duration = self.load_tci_audio(file, 
+                                                            sample_rate=self.sample_rate,
+                                                            volume=self.volume)
             self.abort_trigger.clear()
             self.player_busy = True
             
@@ -185,10 +189,14 @@ class TCIAudio:
                        sample_rate: int = 48000,
                        samples_per_packet: int = 2048,
                        volume=1.0) -> list[bytes]:
+        if path in self.packet_cache:
+            print(f"using cached buffer for {path}")
+            return self.packet_cache[path]['buffer'], self.packet_cache[path]['duration']
+        
         FORMAT = 0 #PCM16
         TYPE_TX_AUDIO_STREAM = 2
         num_silent_packets = 6
-        
+
         audio = AudioSegment.from_file(path)
 
         audio = (
@@ -203,7 +211,7 @@ class TCIAudio:
         channels = 1
         bytes_per_sample = 2
         bytes_per_packet = samples_per_packet * channels * bytes_per_sample
-
+        duration = audio.duration_seconds
         packets = []
 
         for pos in range(0, len(pcm), bytes_per_packet):
@@ -227,10 +235,18 @@ class TCIAudio:
 
             packets.append(header + chunk)
         
-        silence = header + bytes(bytes_per_packet)
+        quiet = bytes(bytes_per_packet)
+        silence = header + quiet
         packets.extend([silence] * num_silent_packets)
-
-        return packets
+        astr = io.BytesIO(quiet)
+        a = AudioSegment.from_raw(astr, sample_width=2, 
+                                  frame_rate=sample_rate,
+                                  channels=1)
+        duration += a.duration_seconds * num_silent_packets
+        #duration += self.txd_post
+        self.packet_cache[path] = { "buffer": packets, "duration": duration }
+        print(f"cached {path} with duration {duration}")
+        return packets, duration
 
     async def flush_pending(self, ws):
         flushed = 0
@@ -254,6 +270,8 @@ class TCIAudio:
             timeouts = 0
             flushed = await self.flush_pending(ws)
             
+            tx_stream_start = time.monotonic()
+            
             while idx < audio_length and not self.stop_network_thread.is_set():
                 if self.abort_trigger.is_set():
                     print("TCI Persistent: Playback transmission sequence aborted!")
@@ -265,13 +283,14 @@ class TCIAudio:
                 if isinstance(packet, bytes) and len(packet) >= 64:
                     header = struct.unpack(self.header_format, packet[:64])
 
-                    #print("TCI header:", header)
-                    #print("requested_samples:", requested_samples, "stream_type:", stream_type)
                     if header[6] == 3:  # TYPE_TX_CHRONO
                         await ws.send(self.audio_data_buffer[idx])
                         idx += 1
 
             if not self.abort_trigger.is_set() and not self.stop_network_thread.is_set():
+                elapsed = time.monotonic() - tx_stream_start
+                if elapsed < self.audio_duration:
+                    await asyncio.sleep(self.audio_duration - elapsed)
                 await asyncio.sleep(0.20)
 
         except Exception as tx_err:
