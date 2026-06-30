@@ -141,13 +141,15 @@ def audio_menu(settings):
     beChoice = sg.Combo(key='Dev::Backend', values=['SmartSDR (DAX)', 'TCI'], enable_events=True, default_value=settings['audio-backend'])
 
     settings_layout = [
-        [sg.Push(), sg.Text("Audio Backend: "), beChoice, sg.Push()],
-        [sg.Push(), sg.Text("Device: ", key="Dev::PGl", visible=(settings['audio-backend'] == "SmartSDR (DAX)")), devChoice, sg.Push()],
-        [sg.Text("TCI Host:", key="Dev::TCIhl", visible=(settings['audio-backend'] == "TCI")),sg.Push(),
-         sg.Input(key='TCI::Host', default_text=settings['tci-host'], visible=(settings['audio-backend'] == "TCI"))
+        [sg.Text("Audio Backend: "), beChoice],
+        [sg.pin(sg.Text("Device: ", key="Dev::PGl", visible=(settings['audio-backend'] == "SmartSDR (DAX)"))),sg.pin(devChoice)],
+        [sg.pin(sg.Checkbox("Link AetherSDR TX to PC Audio Input (use only on Linux/pipewire and AetherSDR < v26.6.x)", 
+                     key="hackcheck", default=settings['audio-hack'], visible=audio.BackendName() == "SmartSDR (DAX)"))],
+        [sg.pin(sg.Text("TCI Host:", key="Dev::TCIhl", visible=(settings['audio-backend'] == "TCI"))),
+         sg.pin(sg.Input(key='TCI::Host', default_text=settings['tci-host'], visible=(settings['audio-backend'] == "TCI")))
          ],
-        [sg.Text("TCI Port:", key="Dev::TCIpl", visible=(settings['audio-backend'] == "TCI")),sg.Push(),
-         sg.Input(key='TCI::Port', default_text=settings['tci-port'], visible=(settings['audio-backend'] == "TCI")),
+        [sg.pin(sg.Text("TCI Port:", key="Dev::TCIpl", visible=(settings['audio-backend'] == "TCI"))),
+         sg.pin(sg.Input(key='TCI::Port', default_text=settings['tci-port'], visible=(settings['audio-backend'] == "TCI")))
         ]
     ]
 
@@ -167,7 +169,7 @@ def audio_menu(settings):
 
             window['Dev::PGl'].update(visible=(be_name == "SmartSDR (DAX)"))
             window['Dev::Name'].update(values=[d['name'] for d in devices], visible=(be_name == "SmartSDR (DAX)"), value=" ")
-
+            window['hackcheck'].update(visible=(audio_be.BackendName() == "SmartSDR (DAX)"))
             window['Dev::TCIhl'].update(visible=(be_name == "TCI"))
             window['TCI::Host'].update(visible=(be_name == "TCI"))
             window['Dev::TCIpl'].update(visible=(be_name == "TCI"))
@@ -176,6 +178,22 @@ def audio_menu(settings):
         elif event == 'Save':
             window.close()
             return save_audio_settings(settings, values), True
+
+def EnsureAudioPath(source, target, enabled):
+    links = subprocess.run(
+            ["pw-link", "-l"],
+            capture_output=True,
+            text=True
+        ).stdout
+    if enabled:
+        #print(f"links: {links}")
+        if source in links and target in links:
+            return
+
+        subprocess.run(["pw-link", source, target], check=False)
+    else:
+        if source in links and target in links:
+            subprocess.run(["pw-link", "-d", source, target], check=False)
 
 def macros_menu(settings):
     settings_layout = [[sg.Push(), sg.Text("Macro Configuration"), sg.Push()]]
@@ -244,6 +262,7 @@ def save_audio_settings(settings, values):
 
     settings['audio-backend'] = values['Dev::Backend']
     settings['audio-dev'] = values['Dev::Name']
+    settings['audio-hack'] = values['hackcheck']
 
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
@@ -255,7 +274,12 @@ def save_audio_settings(settings, values):
                 settings['audio-dev'] = audio.list_devices()[0]['name']
             case "SmartSDR (DAX)":
                 audio.Initialize(None, None)
-
+    
+    if audio.BackendName() == "SmartSDR (DAX)" and settings['audio-dev'] == "AetherSDR TX":
+        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+    else:
+        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", False)
+        
     return settings
 
 def save_macros(settings, values):
@@ -299,9 +323,13 @@ def update_status_indicators(window, flex_status, audio_status, state):
 
 def run_gui(settings, layout, window):
     device = settings['audio-dev']
-    print(f"audio device {device}")
+    #print(f"audio device {device}")
     audio_status = audio.ValidateAudioDevice(device)
     counter = 0
+    
+    if audio.BackendName() == "SmartSDR (DAX)":
+        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+
 
     while True:
         # see if audio has finished, and we need to un-key the rig
@@ -315,6 +343,9 @@ def run_gui(settings, layout, window):
             prev = audio_status
             audio_status = audio.ValidateAudioDevice(device)
             window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
+            if prev != audio_status and audio_status == "READY":
+                if audio.BackendName() == "SmartSDR (DAX)" and audio.device == "AetherSDR TX":
+                    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
             counter = 0
         else:
             counter += 1
@@ -399,6 +430,9 @@ def _init_settings():
 
     if settings['volume'] is None:
         settings['volume'] = 1.0
+    
+    if settings['audio-hack'] is None:
+        settings['audio-hack'] = False
 
     return settings
 
