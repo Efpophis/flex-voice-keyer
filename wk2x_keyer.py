@@ -95,13 +95,13 @@ def build_layout(settings):
                                         justification="center",key="Audio::Status"),
                                 sg.Text(settings['audio-dev'],justification="center", key="Audio::Dev")],
             [sg.Text("Backend:"), sg.Text(settings['audio-backend'], justification="center", key="Audio::Backend")]
-
+# TODO : sg.pin() stuff with variable visibility
         ],expand_x=True, expand_y=True)],
         [sg.Text("")],
-        [sg.Text("Output Volume:  0", visible=(audio.BackendName() == "SmartSDR (DAX)")),
-         sg.Slider((1,110), orientation='horizontal', disable_number_display=True, visible=(audio.BackendName() == "SmartSDR (DAX)"),
-                    key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True),
-        sg.Text("11", visible=(audio.BackendName() == "SmartSDR (DAX)"))],
+        [sg.pin(sg.Text("Output Volume:  0", visible=(audio.BackendName() == "SmartSDR (DAX)"), key="Vol::lbl")),
+         sg.pin(sg.Slider((1,110), orientation='horizontal', disable_number_display=True, visible=(audio.BackendName() == "SmartSDR (DAX)"),
+                    key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True)),
+        sg.pin(sg.Text("11", visible=(audio.BackendName() == "SmartSDR (DAX)"), key="Vol::lbl1"))],
         [sg.Frame('Macro Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Text("")],
         [sg.Push(), sg.Button('Exit')]
@@ -329,6 +329,8 @@ def run_gui(settings, layout, window):
     
     if audio.BackendName() == "SmartSDR (DAX)":
         EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+    else:
+        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", False)
 
 
     while True:
@@ -346,6 +348,8 @@ def run_gui(settings, layout, window):
             if prev != audio_status and audio_status == "READY":
                 if audio.BackendName() == "SmartSDR (DAX)" and audio.device == "AetherSDR TX":
                     EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+                else:
+                    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", False)
             counter = 0
         else:
             counter += 1
@@ -390,6 +394,10 @@ def run_gui(settings, layout, window):
                     audio_status = audio.ValidateAudioDevice(device)
                     #audio.Initialize()
                     window["Audio::Backend"].update(settings['audio-backend'])
+                    newbe = settings['audio-backend']
+                    window['Vol::lbl'].update(visible=(newbe == "SmartSDR (DAX)"))
+                    window['Volume'].update(visible=(newbe == "SmartSDR (DAX)"))
+                    window['Vol::lbl1'].update(visible=(newbe == "SmartSDR (DAX)"))
 
             elif event == "Macros":
                 audio.StopAudio()
