@@ -350,7 +350,23 @@ class TCIAudio:
         flushed = 0
         while True:
             try:
-                await asyncio.wait_for(ws.recv(), timeout=0.001)
-                flushed += 1
+                packet = await asyncio.wait_for(ws.recv(), timeout=0.001)
+                if isinstance(packet, bytes) and len(packet) >= 64:
+                    header = struct.pack(
+                        self.header_format,
+                        0, # trx index
+                        48000, # sample rate
+                        0, # pcm16
+                        0,
+                        0,
+                        0, # samples
+                        2, # tx audio stream
+                        1, # channels
+                        0,0,0,0,0,0,0,0
+                    )
+                    await ws.send(header)
+                    flushed += 1
+                elif isinstance(packet, str):
+                    await self._handle_text_packet(packet, ws)
             except asyncio.TimeoutError:
                 return flushed
