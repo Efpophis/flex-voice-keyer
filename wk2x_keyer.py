@@ -140,12 +140,12 @@ def audio_menu(settings):
     settings_layout = [
         [sg.Push(), sg.Text("Audio Backend: "), beChoice, sg.Push()],
         [sg.Push(), sg.Text("Device: ", key="Dev::PGl", visible=(settings['audio-backend'] == "PyGame")), devChoice, sg.Push()],
-        [sg.Text("TCI Host:", key="Dev::TCIhl", visible=(settings['audio-backend'] == "TCI")),
-         sg.Input(key='TCI::Host', default_text=settings['tci-host'], visible=(settings['audio-backend'] == "TCI")),
-         sg.Push()],
-        [sg.Text("TCI Port:", key="Dev::TCIpl", visible=(settings['audio-backend'] == "TCI")),
-         sg.Input(key='TCI::Port', default_text=settings['tci-port'], visible=(settings['audio-backend'] == "TCI"))
-         ]
+        [sg.Text("TCI Host:", key="Dev::TCIhl", visible=(settings['audio-backend'] == "TCI")),sg.Push(),
+         sg.Input(key='TCI::Host', default_text=settings['tci-host'], visible=(settings['audio-backend'] == "TCI"))
+         ],
+        [sg.Text("TCI Port:", key="Dev::TCIpl", visible=(settings['audio-backend'] == "TCI")),sg.Push(),
+         sg.Input(key='TCI::Port', default_text=settings['tci-port'], visible=(settings['audio-backend'] == "TCI")),
+        ]
     ]
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
@@ -178,10 +178,10 @@ def macros_menu(settings):
     settings_layout = [[sg.Push(), sg.Text("Macro Configuration"), sg.Push()]]
     for i in range(1,LABEL_MAX):
         settings_layout.append([sg.Push(),
-                                sg.Checkbox("Enabled:", key=f'F{i}-enabled', default=settings[f'F{i}-enabled']),
-                                sg.Text(f"F{i} Label: "),
+                                sg.Checkbox("Enabled", key=f'F{i}-enabled', default=settings[f'F{i}-enabled']),
+                                sg.Text(f"F{i} Label:"),sg.Push(),
                                 sg.Input(key=f'F{i}-label', default_text=settings[f'F{i}-label']),
-                                sg.Text('Audio: '),
+                                sg.Text('Audio:'),sg.Push(),
                                 sg.Input(key=f'F{i}-audio', default_text=settings[f'F{i}-audio']),
                                 sg.FileBrowse(key=f'F{i}-file'), sg.Push()])
 
@@ -202,8 +202,8 @@ def macros_menu(settings):
 
 def rig_menu(settings):
     settings_layout = [[sg.Push(), sg.Text("Rig Settings"), sg.Push()],
-                       [sg.Text("Pre-TX Delay: "), sg.Input(key='Rig::PreTXD', default_text=str(settings['rig-txpre-delay'])), sg.Push()],
-                       [sg.Text("Post-Tx Delay:"), sg.Input(key='Rig::PosTXD', default_text=str(settings['rig-txpost-delay']))]
+                       [sg.Text("Pre-TX Delay: "), sg.Push(),sg.Input(key='Rig::PreTXD', default_text=str(settings['rig-txpre-delay']))],
+                       [sg.Text("Post-Tx Delay:"), sg.Push(),sg.Input(key='Rig::PosTXD', default_text=str(settings['rig-txpost-delay']))]
     ]
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
