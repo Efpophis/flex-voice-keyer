@@ -8,7 +8,7 @@ class PGAudio:
     def __init__(self):
         self.player = None
         self.device = None
-        self.backend_name = "PyGame"
+        self.backend_name = "SmartSDR (DAX)"
         self.volume = 1.0
         self.player_busy = False
         self.txd_pre = 0.1

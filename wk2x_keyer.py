@@ -98,10 +98,10 @@ def build_layout(settings):
 
         ],expand_x=True, expand_y=True)],
         [sg.Text("")],
-        [sg.Text("Output Volume:  0", visible=(audio.BackendName() == "PyGame")),
-         sg.Slider((1,110), orientation='horizontal', disable_number_display=True, visible=(audio.BackendName() == "PyGame"),
+        [sg.Text("Output Volume:  0", visible=(audio.BackendName() == "SmartSDR (DAX)")),
+         sg.Slider((1,110), orientation='horizontal', disable_number_display=True, visible=(audio.BackendName() == "SmartSDR (DAX)"),
                     key="Volume", enable_events=True, default_value=settings['volume']*110, expand_x=True),
-        sg.Text("11", visible=(audio.BackendName() == "PyGame"))],
+        sg.Text("11", visible=(audio.BackendName() == "SmartSDR (DAX)"))],
         [sg.Frame('Macro Buttons', button_row, expand_y=True, expand_x=True)],
         [sg.Text("")],
         [sg.Push(), sg.Button('Exit')]
@@ -136,13 +136,13 @@ def audio_menu(settings):
     devChoice = sg.Combo(key='Dev::Name',
                          values=[d['name'] for d in devices],
                          default_value=settings['audio-dev'],
-                         visible=(settings['audio-backend'] == "PyGame")
+                         visible=(settings['audio-backend'] == "SmartSDR (DAX)")
                         )
-    beChoice = sg.Combo(key='Dev::Backend', values=['PyGame', 'TCI'], enable_events=True, default_value=settings['audio-backend'])
+    beChoice = sg.Combo(key='Dev::Backend', values=['SmartSDR (DAX)', 'TCI'], enable_events=True, default_value=settings['audio-backend'])
 
     settings_layout = [
         [sg.Push(), sg.Text("Audio Backend: "), beChoice, sg.Push()],
-        [sg.Push(), sg.Text("Device: ", key="Dev::PGl", visible=(settings['audio-backend'] == "PyGame")), devChoice, sg.Push()],
+        [sg.Push(), sg.Text("Device: ", key="Dev::PGl", visible=(settings['audio-backend'] == "SmartSDR (DAX)")), devChoice, sg.Push()],
         [sg.Text("TCI Host:", key="Dev::TCIhl", visible=(settings['audio-backend'] == "TCI")),sg.Push(),
          sg.Input(key='TCI::Host', default_text=settings['tci-host'], visible=(settings['audio-backend'] == "TCI"))
          ],
@@ -165,8 +165,8 @@ def audio_menu(settings):
             devices = audio_be.list_devices()
             be_name = audio_be.BackendName()
 
-            window['Dev::PGl'].update(visible=(be_name == "PyGame"))
-            window['Dev::Name'].update(values=[d['name'] for d in devices], visible=(be_name == "PyGame"), value=" ")
+            window['Dev::PGl'].update(visible=(be_name == "SmartSDR (DAX)"))
+            window['Dev::Name'].update(values=[d['name'] for d in devices], visible=(be_name == "SmartSDR (DAX)"), value=" ")
 
             window['Dev::TCIhl'].update(visible=(be_name == "TCI"))
             window['TCI::Host'].update(visible=(be_name == "TCI"))
@@ -235,7 +235,7 @@ def get_audio_backend(backend_name):
     match backend_name:
         case "TCI":
             audio = TCIAudio()
-        case "PyGame":
+        case "SmartSDR (DAX)":
             audio = PGAudio()
     return audio
 
@@ -253,7 +253,7 @@ def save_audio_settings(settings, values):
             case "TCI":
                 audio.Initialize(settings['tci-host'], settings['tci-port'])
                 settings['audio-dev'] = audio.list_devices()[0]['name']
-            case "PyGame":
+            case "SmartSDR (DAX)":
                 audio.Initialize(None, None)
 
     return settings
@@ -410,7 +410,7 @@ def main(argv):
 
         # set up audio backend
         match settings['audio-backend']:
-            case "PyGame":
+            case "SmartSDR (DAX)":
                 audio = PGAudio()
                 audio.Initialize(None, None)
             case "TCI":
