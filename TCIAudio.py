@@ -35,6 +35,7 @@ class TCIAudio:
         self.audio_duration = 0
         self.tx_stream_start = 0
         self.tx_idx = 0
+        self.pending_audio = None
 
     def BackendName(self):
         return self.backend_name
@@ -84,17 +85,22 @@ class TCIAudio:
         if not self.tci_uri:
             print("TCI Backend Warning: SendAudio called before Initialize()!")
             return
-
-        if self.player_busy:
-            self.StopAudio()
-
         try:
-            # 3. Swap the buffer data and trip the thread triggers safely
-            self.audio_data_buffer, self.audio_duration = self.load_tci_audio(file, 
-                                                            sample_rate=self.sample_rate,
-                                                            volume=self.volume)
-            self.abort_trigger.clear()
-            self.player_busy = True
+            # 3. Swap the buffer data and trip the thread triggers safe
+            packets, duration = self.load_tci_audio(file, 
+                                                    sample_rate=self.sample_rate,
+                                                    volume=self.volume)
+            if self.player_busy:
+                #self.StopAudio()
+                self.pending_audio = (packets, duration)
+                self.abort_trigger.set()
+                return
+            
+            self.audio_data_buffer = packets
+            self.audio_duration = duration
+            #self.tx_trigger.set()
+            #self.abort_trigger.clear()
+            #self.player_busy = True
             
             # This triggers the background worker loop to instantly run the transmission stream
             self.tx_trigger.set()
@@ -107,11 +113,10 @@ class TCIAudio:
     def StopAudio(self):
         """Instantly flags the background async engine to cancel active audio transmission loops."""
         if self.player_busy:
-            print("aborting")
             self.abort_trigger.set()
             self.tx_trigger.clear()
-            self.audio_data_buffer = bytearray()
-            self.player_busy = False
+            #self.audio_data_buffer = bytearray()
+            #self.player_busy = False
 
     def SetVolume(self, volume):
         """Sets the volume factor for future transmissions (Range: 0.0 - 1.0)."""
@@ -119,6 +124,8 @@ class TCIAudio:
 
     def ValidateAudioDevice(self, device):
         """Polymorphic placeholder compatibility verification."""
+        if self.rig_status != "READY":
+            return "NO DEVICE"
         return "READY"
 
     def list_devices(self):
@@ -141,10 +148,28 @@ class TCIAudio:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            #loop.run_until_complete(self._network_lifecycle_manager())
             loop.run_until_complete(self._network_loop())
         finally:
             loop.close()
+
+    def _clear_tx_state(self):
+        self.player_busy = False
+        self.abort_trigger.clear()
+        self.tx_trigger.clear()
+        self.audio_data_buffer = []
+        self.audio_duration = 0
+        self.tx_idx = 0
+    
+    def _promote_pending_audio(self):
+        if self.pending_audio:
+            self.audio_data_buffer, self.audio_duration = self.pending_audio
+            self.pending_audio = None
+            self.tx_trigger.set()
+
+    async def _abort_tx(self, ws):
+        await ws.send(f'TRX:{self.trx_index},false;')
+        await self.flush_pending(ws)
+        self._clear_tx_state()
 
     async def _network_loop(self):
         """Maintains the connection loop, handling automated reconselfnects on network drops."""
@@ -157,6 +182,13 @@ class TCIAudio:
                     self.rig_status = "CONNECTED"
                     await ws.send(f'TRX:{self.trx_index};')
                     while not self.stop_network_thread.is_set():
+                        if not self.player_busy and self.pending_audio:
+                            self._promote_pending_audio()
+
+                        if self.abort_trigger.is_set() and self.player_busy:
+                            await self._abort_tx(ws)
+                            continue
+                            
                         if self.tx_trigger.is_set():
                             self.tx_trigger.clear()
                             self.player_busy = True
@@ -170,13 +202,25 @@ class TCIAudio:
                             self.tx_stream_start = time.monotonic()
 
                         try:
-                            packet = await asyncio.wait_for(ws.recv(), timeout=0.05)
+                            packet = await asyncio.wait_for(ws.recv(), timeout=0.005)
+                            if self.abort_trigger.is_set() and self.player_busy:
+                                await self._abort_tx(ws)
+                                continue
+
                             if isinstance(packet, bytes) and len(packet) >= 64:
                                 tx_done = await self._handle_sync_packet(packet, ws)
-                                if tx_done or self.abort_trigger.is_set():
-                                    await ws.send(f"TRX:{self.trx_index},false;")
-                                    end_flush = await self.flush_pending(ws)
-                                    self.player_busy = False
+                                if tx_done:
+                                    if not self.abort_trigger.is_set():
+                                        elapsed = time.monotonic() - self.tx_stream_start
+                                        if elapsed < self.audio_duration:
+                                            await asyncio.sleep(self.audio_duration - elapsed)
+                                        if self.txd_post > 0:
+                                            await asyncio.sleep(self.txd_post)
+                                        await self._abort_tx(ws)
+                                        continue
+                                    else:
+                                        await self._abort_tx(ws)
+                                        continue
                             elif isinstance(packet, str):
                                 await self._handle_text_packet(packet, ws)
                         except asyncio.TimeoutError:
@@ -184,7 +228,7 @@ class TCIAudio:
                         except Exception as e:
                             raise
 
-                        await asyncio.sleep(0.01)
+                        #await asyncio.sleep(0.01)
 
             except (websockets.ConnectionClosed, OSError) as conn_err:
                 # Only log error and sleep if we aren't intentionally shutting down the thread
@@ -198,18 +242,15 @@ class TCIAudio:
                 raise
 
     async def _handle_sync_packet(self, packet, ws):
+        if self.abort_trigger.is_set():
+            return True
+        
         header = struct.unpack(self.header_format, packet[:64])
         if header[6] == 3:  # TYPE_TX_CHRONO
             if self.tx_idx < len(self.audio_data_buffer):
                 await ws.send(self.audio_data_buffer[self.tx_idx])
                 self.tx_idx += 1
             else:
-                elapsed = time.monotonic() - self.tx_stream_start
-                if elapsed < self.audio_duration:
-                    await asyncio.sleep(self.audio_duration - elapsed)
-
-                if self.txd_post > 0:
-                    await asyncio.sleep(self.txd_post)
                 return True
         else:
             print(f'got weird packet: {header}')

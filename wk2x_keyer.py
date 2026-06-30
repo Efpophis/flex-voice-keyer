@@ -77,7 +77,6 @@ def build_layout(settings):
     for i in range(1,LABEL_MAX):
         buttons.append(sg.Button(settings[f'F{i}-label'], tooltip=f" F{i} ", key=f'Play::F{i}', visible=settings[f'F{i}-enabled']))
 
-
     buttons.append(sg.Push())
 
     button_row= [buttons]
@@ -115,7 +114,7 @@ def build_layout(settings):
     return layout, window
 
 def about_box():
-    version = 'v0.0.1'
+    version = 'v1.0.0'
     sg.popup_ok(f"WK2X Flex Voice Keyer {version}",
                 "A simple voice keyer for Flex Radios",
                 "by Epophis@gitub https://github.com/Efpophis")
@@ -319,7 +318,7 @@ def run_gui(settings, layout, window):
 
         update_status_indicators(window, flex_status, audio_status, state)
 
-        event, values = window.read(timeout=50)
+        event, values = window.read(timeout=5)
 
         if event == sg.WIN_CLOSED or event == "Exit":
             break
