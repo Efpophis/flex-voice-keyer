@@ -46,7 +46,7 @@ class FlexRadio:
         if self.listener_running:
             self.listener_running = False
             self.listener.join(timeout=0.4)
-        
+
     def parse_flex_status(self, line: str) -> FlexStatus:
         line = line.strip()
 
@@ -171,7 +171,7 @@ class FlexRadio:
     def Connect(self):
         if self.port == 0:
             self.Discover()
-        
+
         self.sock.connect(self.host, self.port)
         radio_info=self.sock.empty()
         self.rig_status = "CONNECTED"

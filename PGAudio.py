@@ -58,11 +58,11 @@ class PGAudio:
         if self.player_busy == True:
             self.player.set_volume(volume)
         self.volume = volume
-    
+
     def Status(self):
         #stub for now
         return self.rig.Status()
-    
+
     def ValidateAudioDevice(self, device):
         for dev in self.list_devices():
             if dev["name"] == device:

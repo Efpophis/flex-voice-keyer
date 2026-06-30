@@ -58,8 +58,11 @@ def ipc_listener(window):
 
 def _voice_keyer(device, file):
     try:
-        audio.StopAudio()
-        audio.SendAudio(device, file)
+        _, txing = audio.Status()
+        if txing == "TX":
+            audio.StopAudio()
+        else:
+            audio.SendAudio(device, file)
 
     except Exception as e:
         print(f"Error executing keyer: {e}")
@@ -130,8 +133,8 @@ def get_file(settings, keyp):
 def audio_menu(settings):
     audio.StopAudio()
     devices = audio.list_devices()
-    devChoice = sg.Combo(key='Dev::Name', 
-                         values=[d['name'] for d in devices], 
+    devChoice = sg.Combo(key='Dev::Name',
+                         values=[d['name'] for d in devices],
                          default_value=settings['audio-dev'],
                          visible=(settings['audio-backend'] == "PyGame")
                         )
@@ -161,10 +164,10 @@ def audio_menu(settings):
             audio_be = get_audio_backend(values[event])
             devices = audio_be.list_devices()
             be_name = audio_be.BackendName()
-            
+
             window['Dev::PGl'].update(visible=(be_name == "PyGame"))
             window['Dev::Name'].update(values=[d['name'] for d in devices], visible=(be_name == "PyGame"), value=" ")
-            
+
             window['Dev::TCIhl'].update(visible=(be_name == "TCI"))
             window['TCI::Host'].update(visible=(be_name == "TCI"))
             window['Dev::TCIpl'].update(visible=(be_name == "TCI"))
@@ -238,10 +241,10 @@ def get_audio_backend(backend_name):
 
 def save_audio_settings(settings, values):
     global audio
-    
+
     settings['audio-backend'] = values['Dev::Backend']
     settings['audio-dev'] = values['Dev::Name']
-    
+
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
             audio.Terminate()
@@ -293,7 +296,7 @@ def update_status_indicators(window, flex_status, audio_status, state):
     window['Rig::Status'].update(flex_status, background_color=STATUS_COLORS[flex_status])
     window["Rig::State"].update(state, visible=(flex_status == "READY"), background_color=STATUS_COLORS[state])
     window["Audio::Status"].update(audio_status,background_color=STATUS_COLORS[audio_status])
-    
+
 def run_gui(settings, layout, window):
     device = settings['audio-dev']
     print(f"audio device {device}")
@@ -376,7 +379,7 @@ def _init_settings():
 
     if settings['audio-backend'] is None:
         settings['audio-backend'] = "TCI"
-    
+
     if settings['tci-host'] is None:
         settings['tci-host'] = "localhost"
     if settings['tci-port'] is None:
@@ -413,7 +416,7 @@ def main(argv):
             case "TCI":
                 audio = TCIAudio()
                 audio.Initialize(settings['tci-host'], settings['tci-port'])
-        
+
         audio.SetVolume(settings['volume'])
 
         audio.txd_pre = settings['rig-txpre-delay']
