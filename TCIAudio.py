@@ -246,7 +246,7 @@ class TCIAudio:
                     self.rig_status = "DISCONNECTED"
                     await asyncio.sleep(3)
             except Exception as e:
-                print("Exception 2 in _network_loop(): {e}")
+                print(f"Exception 2 in _network_loop(): {e}")
                 raise
 
     async def _handle_sync_packet(self, packet, ws):

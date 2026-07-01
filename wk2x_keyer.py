@@ -16,12 +16,17 @@ from wkicon import icon_b64
 import traceback
 
 audio = None
-#audio = TCIAudio()
 LABEL_MAX=13
-#audio = PGAudio()
+
+def get_socket_path():
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime_dir:
+        runtime_dir = f"/run/user/{os.getuid()}"
+    return os.path.join(runtime_dir, "wk2x_voicekeyer.sock")
 
 def create_ipc_socket():
-    SOCKET_PATH="/tmp/wk2x_voicekeyer.sock"
+    SOCKET_PATH = get_socket_path()
+    
     # Remove stale socket from previous crash
     try:
         os.unlink(SOCKET_PATH)
@@ -47,7 +52,7 @@ def ipc_listener(window):
 
             cmd = data.decode().strip()
 
-            if "Play::" in cmd:
+            if cmd.startswith("Play::"):
                 window.write_event_value(cmd, cmd[6:])
 
         except Exception as e:
