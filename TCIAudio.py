@@ -167,7 +167,7 @@ class TCIAudio:
             self.pending_audio = None
             self.tx_trigger.set()
 
-    async def _abort_tx(self, ws):
+    async def _halt_tx(self, ws):
         await ws.send(f'TRX:{self.trx_index},false;')
         await self.flush_pending(ws)
         # such an UGLY hack .. AetherSDR enables DAX and prevents
@@ -193,7 +193,7 @@ class TCIAudio:
                             self._promote_pending_audio()
 
                         if self.abort_trigger.is_set() and self.player_busy:
-                            await self._abort_tx(ws)
+                            await self._halt_tx(ws)
                             continue
 
                         if self.tx_trigger.is_set():
@@ -211,7 +211,7 @@ class TCIAudio:
                         try:
                             packet = await asyncio.wait_for(ws.recv(), timeout=0.005)
                             if self.abort_trigger.is_set() and self.player_busy:
-                                await self._abort_tx(ws)
+                                await self._halt_tx(ws)
                                 continue
 
                             if isinstance(packet, bytes) and len(packet) >= 64:
