@@ -174,8 +174,9 @@ class TCIAudio:
         # # voice audio from coming from the mic afterwards. The only
         # # work-around I've found is to quickly bounce it to another mode and back
         mode = self.old_mode # save it off because the rig will change it
-        await ws.send(f'modulation:{self.trx_index},digu;')
-        await ws.send(f'modulation:{self.trx_index},{mode};') #/uglyhack
+        if mode:
+            await ws.send(f'modulation:{self.trx_index},digu;')
+            await ws.send(f'modulation:{self.trx_index},{mode};') #/uglyhack
         self._clear_tx_state()
 
     async def _network_loop(self):
@@ -223,10 +224,10 @@ class TCIAudio:
                                             await asyncio.sleep(self.audio_duration - elapsed)
                                         if self.txd_post > 0:
                                             await asyncio.sleep(self.txd_post)
-                                        await self._abort_tx(ws)
+                                        await self._halt_tx(ws)
                                         continue
                                     else:
-                                        await self._abort_tx(ws)
+                                        await self._halt_tx(ws)
                                         continue
                             elif isinstance(packet, str):
                                 await self._handle_text_packet(packet, ws)
