@@ -382,8 +382,10 @@ def run_gui(settings, layout, window):
             if "Play::" in event:
                 keyp = event[6:]
                 file = get_file(settings, keyp)
-                if file != "" and audio_status == "READY":
+                if file and audio_status == "READY":
                     _voice_keyer(device, file)
+                else:
+                    print(f"not keying because file = {file}, audio_status = {audio_status}")
 
             elif event == "Stop":
                 audio.StopAudio()
@@ -447,6 +449,8 @@ def _init_settings():
             settings[f'F{i}-label'] = f"F{i}"
         if settings[f'F{i}-enabled'] is None:
             settings[f'F{i}-enabled'] = True
+        if settings[f'F{i}-audio'] is None:
+            settings[f'F{i}-audio'] = ""
 
     if settings['rig-txpre-delay'] is None:
         settings['rig-txpre-delay'] = 0.1
@@ -498,7 +502,9 @@ def main(argv):
         ret = 1
     finally:
  #       rig.UnkeyTX()
-        audio.StopAudio()
+        if audio is not None:
+            audio.StopAudio()
+            audio.Terminate()
         sys.exit(ret)
 
 if __name__ == "__main__":
