@@ -147,16 +147,22 @@ class FlexRadio:
         sd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sd.bind(('', 4992))
-        data, addr = sd.recvfrom(4096)
-        if len(data) > 7:
-            string = data[28:].decode()
-            ps = string.split(' ')
-            for s in ps:
-                item = s.split('=')
-                disc[item[0]] = item[1]
-            self.host = disc['ip']
-            self.port = int(disc['port'])
-        sd.close()
+        sd.settimeout(5)
+        try:
+            data, addr = sd.recvfrom(4096)
+            if len(data) > 7:
+                string = data[28:].decode()
+                ps = string.split(' ')
+                for s in ps:
+                    item = s.split('=')
+                    disc[item[0]] = item[1]
+                self.host = disc['ip']
+                self.port = int(disc['port'])
+                self.rig_status = "CONNECTING"
+        except socket.timeout:
+            self.rig_status = "OFFLINE"
+        finally:
+            sd.close()
 
     def Status(self):
         flex_status = self.rig_status
@@ -171,11 +177,12 @@ class FlexRadio:
     def Connect(self):
         if self.port == 0:
             self.Discover()
-
-        self.sock.connect(self.host, self.port)
-        radio_info=self.sock.empty()
-        self.rig_status = "CONNECTED"
-        self.StartStatusThread()
+        
+        if self.rig_status == "CONNECTING":
+            self.sock.connect(self.host, self.port)
+            radio_info=self.sock.empty()
+            self.rig_status = "CONNECTED"
+            self.StartStatusThread()
 
     def StartStatusThread(self):
         self.listener = threading.Thread(target=self._status_listener, daemon=True)
