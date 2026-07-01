@@ -269,6 +269,14 @@ def save_audio_settings(settings, values):
     settings['audio-dev'] = values['Dev::Name']
     settings['audio-hack'] = values['hackcheck']
 
+    if settings['tci-host'] != values['TCI::Host'] or settings['tci-port'] != int(values['TCI::Port']):
+        settings['tci-host'] = values['TCI::Host']
+        settings['tci-port'] = int(values['TCI::Port'])
+        tci_url_latch = True;
+    else:
+        tci_url_latch = False;
+
+
     if values['Dev::Backend'] != audio.BackendName():
         if audio is not None:
             audio.Terminate()
@@ -284,7 +292,11 @@ def save_audio_settings(settings, values):
         EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
     else:
         EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", False)
-        
+
+    if tci_url_latch:
+        audio.Terminate()
+        audio.Initialize(settings['tci-host'], settings['tci-port'])
+
     return settings
 
 def save_macros(settings, values):
