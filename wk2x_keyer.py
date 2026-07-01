@@ -316,8 +316,9 @@ def update_status_indicators(window, flex_status, audio_status, state):
         "OFFLINE":      "#FF0000",
         "DISCONNECTED": "#FF0000",
         "NO DEVICE":    "#FF0000",
-        "DISCOVERING":  "#FFA500",
+        "DISCOVERY":    "#FFA500",
         "CONNECTED":    "#FFD700",
+        "CONNECTING":   "#00BFFF",
         "STANDBY":      "#FFD700",
         "RX":           "#00FF00",
         "READY":        "#00FF00",
@@ -373,7 +374,7 @@ def run_gui(settings, layout, window):
 
         update_status_indicators(window, flex_status, audio_status, state)
 
-        event, values = window.read(timeout=5)
+        event, values = window.read(timeout=50)
 
         if event == sg.WIN_CLOSED or event == "Exit":
             break
