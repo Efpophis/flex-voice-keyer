@@ -90,6 +90,7 @@ class TCIAudio:
             # 3. Swap the buffer data and trip the thread triggers safe
             packets, duration = self.load_tci_audio(file,
                                                     sample_rate=self.sample_rate,
+                                                    trx_index=self.trx_index,
                                                     volume=self.volume)
             if self.player_busy:
                 #self.StopAudio()
@@ -266,23 +267,45 @@ class TCIAudio:
         return False
 
     async def _handle_text_packet(self, packet, ws):
-        packet = packet.strip()
-#        print(f'TCI: {packet}')
+        packet = packet.strip().rstrip(";")
 
-        if packet.startswith("tx_enable:"):
-            if "true" in packet:
-                self.rig_status = "READY"
-            else:
-                self.rig_status = "STANDBY"
+        if ":" in packet:
+            # "ready" for example - no : - will break the split
+            topic, payload = packet.split(":", 1)
 
-        if packet.startswith("trx:"):
-            if "true" in packet:
-                self.tx_status = "TX"
-            else:
-                self.tx_status = "RX"
+            match topic:
+                case "tx_enable":
+                    trx_index, *args = payload.split(',')
+                    trx_index = int(trx_index)
 
-        if packet.startswith("modulation:"):
-            self.old_mode = packet.rstrip(";").split(",", 1)[1]
+                    enabled = args[0].lower() == "true"
+
+                    if enabled:
+                        self.rig_status = "READY"
+                        self.trx_index = trx_index
+                    else:
+                        if trx_index == self.trx_index:
+                            self.rig_status = "STANDBY"
+
+                case "trx":
+                    trx_index, *args = payload.split(',')
+                    trx_index = int(trx_index)
+
+                    tx = args[0].lower() == "true"
+                    if tx:
+                        self.tx_status = "TX"
+                        self.trx_index = trx_index
+                    elif self.trx_index == trx_index:
+                        self.tx_status = "RX"
+
+                case "modulation":
+                    trx_index, *args = payload.split(',')
+                    trx_index = int(trx_index)
+                    self.old_mode = args[0]
+
+                case _:
+                    return
+        print(f'TCI: {packet}')
 
     def load_tci_audio(self, path : str,
                        trx_index: int = 0,
