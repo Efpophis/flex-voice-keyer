@@ -14,6 +14,7 @@ from PGAudio import *
 from TCIAudio import *
 from wkicon import icon_b64
 import traceback
+import version
 
 audio = None
 LABEL_MAX=13
@@ -100,7 +101,6 @@ def build_layout(settings):
                                         justification="center",key="Audio::Status"),
                                 sg.Text(settings['audio-dev'],justification="center", key="Audio::Dev")],
             [sg.Text("Backend:"), sg.Text(settings['audio-backend'], justification="center", key="Audio::Backend")]
-# TODO : sg.pin() stuff with variable visibility
         ],expand_x=True, expand_y=True)],
         [sg.Text("")],
         [sg.pin(sg.Text("Output Volume:  0", visible=(audio.BackendName() == "SmartSDR (DAX)"), key="Vol::lbl")),
@@ -112,7 +112,7 @@ def build_layout(settings):
         [sg.Push(), sg.Button('Exit')]
     ]
 
-    window = sg.Window("WK2X Flex Voice Keyer", layout, icon=icon_b64, finalize=True)
+    window = sg.Window(f"WK2X Flex Voice Keyer v{version.VERSION}-{version.COMMIT}", layout, icon=icon_b64, finalize=True)
 
     # key bindings
     for i in range(1,LABEL_MAX):
@@ -122,8 +122,9 @@ def build_layout(settings):
     return layout, window
 
 def about_box():
-    version = 'v1.0.0'
-    sg.popup_ok(f"WK2X Flex Voice Keyer {version}",
+    sg.popup_ok(f"WK2X Flex Voice Keyer v{version.VERSION}-{version.COMMIT}",
+                f"Build: {version.GIT_BRANCH}-{version.BUILD_TIME}",
+                "",
                 "A simple voice keyer for Flex Radios",
                 "by Epophis@gitub https://github.com/Efpophis")
 
@@ -159,7 +160,7 @@ def audio_menu(settings):
     ]
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
-    window = sg.Window("WK2X Keyer - Audio Configuration", settings_layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Audio Configuration", settings_layout, modal=True, finalize=True)
 
     while True:
         event, values = window.Read()
@@ -213,7 +214,7 @@ def macros_menu(settings):
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
 
-    window = sg.Window("WK2X Keyer - Macro Configuration", settings_layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Macro Configuration", settings_layout, modal=True, finalize=True)
 
     while True:
         event, values = window.Read()
@@ -234,7 +235,7 @@ def rig_menu(settings):
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
 
-    window = sg.Window("WK2X Keyer - Rig Settings", settings_layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Rig Settings", settings_layout, modal=True, finalize=True)
 
     while True:
         event, values = window.Read()

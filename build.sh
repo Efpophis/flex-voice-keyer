@@ -9,6 +9,13 @@ rm -f "${SRC_NAME}.spec"
 
 python makeb64.py wk2x_keyer_icon.png > wkicon.py
 
+cat >version.py <<DONE
+VERSION = "0.1.0"
+COMMIT = "`git rev-parse --short HEAD`"
+BUILD_TIME = "`date`"
+GIT_BRANCH = "`git branch --show-current`"
+DONE
+
 # stupid windows
 if [ "`uname`" == "Linux" ]; then
     pyinstaller --onefile --noconsole "${SRC_NAME}.py"
