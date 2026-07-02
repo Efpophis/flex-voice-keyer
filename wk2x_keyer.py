@@ -504,8 +504,16 @@ def main(argv):
     finally:
  #       rig.UnkeyTX()
         if audio is not None:
+            layout = [
+                [sg.Text("Shutting down...", font=("Helvetica", 16))],
+                [sg.Text("Please wait a moment.")]
+            ]
+
+            # 2. Create the window without a title bar or controls
+            window = sg.Window('Shutdown', layout, no_titlebar=True, finalize=True)
             audio.StopAudio()
             audio.Terminate()
+            window.close()
         sys.exit(ret)
 
 if __name__ == "__main__":
