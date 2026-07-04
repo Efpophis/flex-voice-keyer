@@ -74,9 +74,9 @@ def _voice_keyer(device, file):
         print(f"Error executing keyer: {e}")
         raise
 
-def build_layout(settings):
+def build_layout(settings, location=None):
     menu_def = [
-        ['&File', ['E&xit']],  ['&Settings', ['&Macros','---', '&Audio', '---', '&Rig']],
+        ['&File', ['E&xit']],  ['&Settings', ['&Macros','---', '&Audio', '---', '&Rig', '---', '&Theme']],
         ['&Help', ['A&bout']]
     ]
 
@@ -309,6 +309,50 @@ def save_macros(settings, values):
 
     return settings
 
+def theme_layout(settings):
+    current_theme = sg.theme()
+    layout = [
+        [sg.Text(f"Current Theme: {current_theme}")],
+        [sg.Text("New Theme:"), sg.Combo(values=[t for t in sg.theme_list()], key='new-theme', default_value=current_theme)],
+        [sg.Push(), sg.Button("Reset", tooltip="back to default"), sg.Button("Preview"), sg.Button("Apply"), sg.Button("Cancel")]
+    ]
+    return layout, current_theme
+
+def pick_theme(settings):
+    layout, current_theme = theme_layout(settings)
+    default_theme = 'DarkBlue3'
+    new_theme = ""
+
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - theme", layout, modal=True, finalize=True)
+    while True:
+        event, values = window.Read()
+
+        if event == sg.WIN_CLOSED or event == 'Cancel':
+            window.close()
+            return False
+
+        elif event == 'Apply':
+            settings['theme'] = values['new-theme']
+            sg.theme(values['new-theme'])
+            window.close()
+            return True
+        elif event == "Preview":
+            new_theme = values['new-theme']
+            window.close()
+            sg.theme(new_theme)
+            layout, current_theme = theme_layout(settings)
+            window = sg.Window(f"WK2X Keyer v{version.VERSION} - theme", layout, modal=True, finalize=True)
+        elif event == 'Reset':
+            window.close()
+            sg.theme(default_theme)
+            return True
+        elif event == "Cancel":
+            new_theme = values['new-theme']
+            if new_theme != current_theme:
+                sg.theme(current_theme)
+            window.close()
+            return False
+
 def update_status_indicators(window, flex_status, audio_status, state):
     # flex status: {OFFLINE (red), DISCOVERY (gold), CONNECTED (green)}
     # audio status: {READY (green), NO DEVICE (red)}
@@ -373,14 +417,15 @@ def run_gui(settings, layout, window):
         else:
             counter += 1
 
+        event, values = window.read(timeout=50)
         update_status_indicators(window, flex_status, audio_status, state)
 
-        event, values = window.read(timeout=50)
 
         if event == sg.WIN_CLOSED or event == "Exit":
             break
         else:
-            if "Play::" in event:
+            #if "Play::" in event:
+            if event.startswith("Play::"):
                 keyp = event[6:]
                 file = get_file(settings, keyp)
                 if file and audio_status == "READY":
@@ -419,7 +464,12 @@ def run_gui(settings, layout, window):
                     window['Vol::lbl'].update(visible=(newbe == "SmartSDR (DAX)"))
                     window['Volume'].update(visible=(newbe == "SmartSDR (DAX)"))
                     window['Vol::lbl1'].update(visible=(newbe == "SmartSDR (DAX)"))
-
+            elif event == "Theme":
+                updated = pick_theme(settings)
+                if updated:
+                    window_loc = window.current_location()
+                    window.close()
+                    layout, window = build_layout(settings, window_loc)
             elif event == "Macros":
                 audio.StopAudio()
                 settings, updated = macros_menu(settings)
@@ -464,6 +514,8 @@ def _init_settings():
     
     if settings['audio-hack'] is None:
         settings['audio-hack'] = False
+    if settings['theme'] is None:
+        settings['theme'] = 'DarkBlue3'
 
     return settings
 
@@ -472,6 +524,8 @@ def main(argv):
     global audio
     try:
         settings = _init_settings()
+
+        sg.theme(settings['theme'])
 
         # set up audio backend
         match settings['audio-backend']:
