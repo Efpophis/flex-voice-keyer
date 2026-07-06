@@ -126,7 +126,7 @@ def about_box():
                 f"Build: {version.GIT_BRANCH}-{version.BUILD_TIME}",
                 "",
                 "A simple voice keyer for Flex Radios",
-                "by Epophis@gitub https://github.com/Efpophis")
+                "by Epophis@gitub https://github.com/Efpophis", icon=icon_b64)
 
 def get_file(settings, keyp):
     filemap = {}
