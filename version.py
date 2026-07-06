@@ -1,4 +1,4 @@
 VERSION = "0.1.0"
-COMMIT = "f698f03"
-BUILD_TIME = "Thu Jul  2 12:12:17 PM EDT 2026"
+COMMIT = "7257335"
+BUILD_TIME = "Mon Jul  6 10:40:59 AM EDT 2026"
 GIT_BRANCH = "tci-experimental"

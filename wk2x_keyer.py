@@ -160,7 +160,7 @@ def audio_menu(settings):
     ]
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
-    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Audio Configuration", settings_layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Audio Configuration", settings_layout, icon=icon_b64, modal=True, finalize=True)
 
     while True:
         event, values = window.Read()
@@ -214,7 +214,7 @@ def macros_menu(settings):
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
 
-    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Macro Configuration", settings_layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Macro Configuration", settings_layout, modal=True, finalize=True, icon=icon_b64)
 
     while True:
         event, values = window.Read()
@@ -235,7 +235,7 @@ def rig_menu(settings):
 
     settings_layout.append([sg.Push(), sg.Button("Save"), sg.Button("Cancel")])
 
-    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Rig Settings", settings_layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - Rig Settings", settings_layout, modal=True, icon=icon_b64, finalize=True)
 
     while True:
         event, values = window.Read()
@@ -323,7 +323,7 @@ def pick_theme(settings):
     default_theme = 'DarkBlue3'
     new_theme = ""
 
-    window = sg.Window(f"WK2X Keyer v{version.VERSION} - theme", layout, modal=True, finalize=True)
+    window = sg.Window(f"WK2X Keyer v{version.VERSION} - theme", layout, modal=True, icon=icon_b64, finalize=True)
     while True:
         event, values = window.Read()
 
@@ -341,7 +341,7 @@ def pick_theme(settings):
             window.close()
             sg.theme(new_theme)
             layout, current_theme = theme_layout(settings)
-            window = sg.Window(f"WK2X Keyer v{version.VERSION} - theme", layout, modal=True, finalize=True)
+            window = sg.Window(f"WK2X Keyer v{version.VERSION} - theme", layout, modal=True, icon=icon_b64, finalize=True)
         elif event == 'Reset':
             window.close()
             sg.theme(default_theme)
@@ -564,7 +564,7 @@ def main(argv):
             ]
 
             # 2. Create the window without a title bar or controls
-            window = sg.Window('Shutdown', layout, no_titlebar=True, finalize=True)
+            window = sg.Window('Shutdown', layout, no_titlebar=True, icon=icon_b64, finalize=True)
             audio.StopAudio()
             audio.Terminate()
             window.close()
