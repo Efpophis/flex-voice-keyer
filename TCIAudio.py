@@ -20,6 +20,7 @@ class TCIAudio:
         self.txd_post = 0.1
         self.rig_status = "OFFLINE"
         self.tx_status = "RX"
+        self.audio_fmt = "pcm16"
 
         # Threading and synchronization structures
         self.audio_data_buffer = bytearray()
@@ -224,6 +225,12 @@ class TCIAudio:
                                 continue
 
                             if isinstance(packet, bytes) and len(packet) >= 64:
+                                #now = time.monotonic()
+
+                                #if hasattr(self, "_last_chrono"):
+                                #    dt = now - self._last_chrono
+                                #    print(f"chrono: {dt * 1000:.3f} ms")
+                                #self._last_chrono = now
                                 tx_done = await self._handle_sync_packet(packet, ws)
                                 if tx_done:
                                     if not self.abort_trigger.is_set():
@@ -312,9 +319,9 @@ class TCIAudio:
 
                 case _:
                     return
-        print(f'TCI: {packet}')
+        #print(f'TCI: {packet}')
 
-    def load_tci_audio_f32(
+    def load_tci_audio(
         self,
         path: str,
         trx_index: int = 0,
@@ -324,9 +331,10 @@ class TCIAudio:
     ):
         FORMAT_FLOAT32 = 3
         TYPE_TX_AUDIO_STREAM = 2
-        CHANNELS = 2
+        CHANNELS = 1
         BYTES_PER_SAMPLE = 4
         NUM_SILENT_PACKETS = 6
+        self.audio_fmt = "float32"
 
         if path in self.packet_cache:
             cached = self.packet_cache[path]
@@ -343,10 +351,12 @@ class TCIAudio:
                 f"{path} is {file_rate} Hz; expected {sample_rate} Hz"
             )
 
-        if audio.shape[1] != CHANNELS:
-            raise ValueError(
-                f"{path} has {audio.shape[1]} channel(s); expected stereo"
-            )
+        #if audio.shape[1] != CHANNELS:
+        #    raise ValueError(
+        #        f"{path} has {audio.shape[1]} channel(s); expected stereo"
+        #    )
+
+        audio = audio.mean(axis=1, keepdims=True)
 
         # Ensure little-endian, interleaved float32: L R L R ...
         pcm = np.ascontiguousarray(audio, dtype="<f4").tobytes()
@@ -393,7 +403,7 @@ class TCIAudio:
 
         return packets, duration
 
-    def load_tci_audio(self, path : str,
+    def load_tci_audio_p16(self, path : str,
                        trx_index: int = 0,
                        sample_rate: int = 48000,
                        samples_per_packet: int = 2048,
@@ -401,7 +411,7 @@ class TCIAudio:
         if path in self.packet_cache:
             print(f"using cached buffer for {path}")
             return self.packet_cache[path]['buffer'], self.packet_cache[path]['duration']
-
+        self.audio_fmt = "pcm16"
         FORMAT = 0 #PCM16
         TYPE_TX_AUDIO_STREAM = 2
         num_silent_packets = 6
@@ -458,22 +468,44 @@ class TCIAudio:
 
     async def flush_pending(self, ws):
         flushed = 0
-        while True:
-            try:
-                packet = await asyncio.wait_for(ws.recv(), timeout=0.001)
-                if isinstance(packet, bytes) and len(packet) >= 64:
-                    header = struct.pack(
+        FORMAT_FLOAT32 = 3
+        FORMAT_PCM16 = 0
+        TYPE_TX_AUDIO_STREAM = 2
+        CHANNELS_FLOAT32 = 2
+        CHANNELS_PCM16 = 1
+        BPS_F32 = 4
+        BPS_PCM = 2
+
+        NUM_SILENT_PACKETS = 6
+
+        if self.audio_fmt == "pcm16":
+            FORMAT = FORMAT_PCM16
+            CHANNELS = CHANNELS_PCM16
+            BPS = BPS_PCM
+        elif self.audio_fmt == "float32":
+            FORMAT = FORMAT_FLOAT32
+            CHANNELS = CHANNELS_FLOAT32
+            BPS = BPS_F32
+        else:
+            print(f"unexepcted audio format: {self.audio_fmt}")
+            return
+
+        header = struct.pack(
                         self.header_format,
                         0, # trx index
                         48000, # sample rate
-                        0, # pcm16
+                        FORMAT, # pcm16
                         0,
                         0,
                         0, # samples
                         2, # tx audio stream
-                        1, # channels
+                        CHANNELS, # channels
                         0,0,0,0,0,0,0,0
                     )
+        while True:
+            try:
+                packet = await asyncio.wait_for(ws.recv(), timeout=0.001)
+                if isinstance(packet, bytes) and len(packet) >= 64:
                     await ws.send(header)
                     flushed += 1
                 elif isinstance(packet, str):
