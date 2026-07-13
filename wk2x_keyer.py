@@ -6,10 +6,8 @@ import sys
 import subprocess
 import os
 import json
-#from FlexRadio import *
 import FreeSimpleGUI as sg
 import threading
-#from WKAudio import *
 from PGAudio import *
 from TCIAudio import *
 from wkicon import icon_b64

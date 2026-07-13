@@ -6,6 +6,8 @@ import struct
 import threading
 import io
 from pydub import AudioSegment
+import soundfile as sf
+import numpy as np
 import array
 import time
 
@@ -169,16 +171,20 @@ class TCIAudio:
             self.tx_trigger.set()
 
     async def _halt_tx(self, ws):
-        await ws.send(f'TRX:{self.trx_index},false;')
-        await self.flush_pending(ws)
-        # such an UGLY hack .. AetherSDR enables DAX and prevents
-        # # voice audio from coming from the mic afterwards. The only
-        # # work-around I've found is to quickly bounce it to another mode and back
-        mode = self.old_mode # save it off because the rig will change it
-        if mode:
-            await ws.send(f'modulation:{self.trx_index},digu;')
-            await ws.send(f'modulation:{self.trx_index},{mode};') #/uglyhack
-        self._clear_tx_state()
+        if self.player_busy:
+            await self.flush_pending(ws)
+            await ws.send(f'TRX:{self.trx_index},false;')
+            # such an UGLY hack .. AetherSDR enables DAX and prevents
+            # # voice audio from coming from the mic afterwards. The only
+            # # work-around I've found is to quickly bounce it to another mode and back
+            ## NOTE:  This no longer works as of AetherSDR V26.7.2, rendering TCI
+            ##        effectively dead in the water unless I can figure something else out.
+            mode = self.old_mode # save it off because the rig will change it
+            if mode:
+                await ws.send(f'modulation:{self.trx_index},digu;')
+                await asyncio.sleep(0.5)
+                await ws.send(f'modulation:{self.trx_index},{mode};') #/uglyhack
+            self._clear_tx_state()
 
     async def _network_loop(self):
         """Maintains the connection loop, handling automated reconselfnects on network drops."""
@@ -190,6 +196,7 @@ class TCIAudio:
                     print("TCI Persistent: Connected and hot-standby active.")
                     self.rig_status = "CONNECTED"
                     await ws.send(f'TRX:{self.trx_index};')
+                    await ws.send("TX_STREAM_AUDIO_BUFFERING:100;")
                     while not self.stop_network_thread.is_set():
                         if not self.player_busy and self.pending_audio:
                             self._promote_pending_audio()
@@ -306,6 +313,85 @@ class TCIAudio:
                 case _:
                     return
         print(f'TCI: {packet}')
+
+    def load_tci_audio_f32(
+        self,
+        path: str,
+        trx_index: int = 0,
+        sample_rate: int = 48000,
+        samples_per_packet: int = 2048,
+        volume: float = 1.0
+    ):
+        FORMAT_FLOAT32 = 3
+        TYPE_TX_AUDIO_STREAM = 2
+        CHANNELS = 2
+        BYTES_PER_SAMPLE = 4
+        NUM_SILENT_PACKETS = 6
+
+        if path in self.packet_cache:
+            cached = self.packet_cache[path]
+            return cached["buffer"], cached["duration"]
+
+        audio, file_rate = sf.read(
+            path,
+            dtype="float32",
+            always_2d=True,
+        )
+
+        if file_rate != sample_rate:
+            raise ValueError(
+                f"{path} is {file_rate} Hz; expected {sample_rate} Hz"
+            )
+
+        if audio.shape[1] != CHANNELS:
+            raise ValueError(
+                f"{path} has {audio.shape[1]} channel(s); expected stereo"
+            )
+
+        # Ensure little-endian, interleaved float32: L R L R ...
+        pcm = np.ascontiguousarray(audio, dtype="<f4").tobytes()
+
+        bytes_per_packet = (
+            samples_per_packet * CHANNELS * BYTES_PER_SAMPLE
+        )
+
+        header = struct.pack(
+            self.header_format,
+            trx_index,
+            sample_rate,
+            FORMAT_FLOAT32,
+            0,                      # codec
+            0,                      # CRC
+            samples_per_packet,     # stereo frames requested
+            TYPE_TX_AUDIO_STREAM,
+            CHANNELS,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+
+        packets = []
+
+        for pos in range(0, len(pcm), bytes_per_packet):
+            chunk = pcm[pos:pos + bytes_per_packet]
+
+            if len(chunk) < bytes_per_packet:
+                chunk = chunk.ljust(bytes_per_packet, b"\x00")
+
+            packets.append(header + chunk)
+
+        silence = bytes(bytes_per_packet)
+        packets.extend([header + silence] * NUM_SILENT_PACKETS)
+
+        # Duration corresponding exactly to the complete packet stream.
+        duration = (
+            len(packets) * samples_per_packet / sample_rate
+        )
+
+        self.packet_cache[path] = {
+            "buffer": packets,
+            "duration": duration,
+        }
+
+        return packets, duration
 
     def load_tci_audio(self, path : str,
                        trx_index: int = 0,
