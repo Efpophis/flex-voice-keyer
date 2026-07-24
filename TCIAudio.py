@@ -175,16 +175,19 @@ class TCIAudio:
         if self.player_busy:
             await self.flush_pending(ws)
             await ws.send(f'TRX:{self.trx_index},false;')
+
             # such an UGLY hack .. AetherSDR enables DAX and prevents
             # # voice audio from coming from the mic afterwards. The only
             # # work-around I've found is to quickly bounce it to another mode and back
-            ## NOTE:  This no longer works as of AetherSDR V26.7.2, rendering TCI
-            ##        effectively dead in the water unless I can figure something else out.
+            ## NOTE:  This does not work in AetherSDR V26.7.2 due to a bug. It should
+            ##        work in releases before and after that one, tho.
             mode = self.old_mode # save it off because the rig will change it
             if mode:
                 await ws.send(f'modulation:{self.trx_index},digu;')
                 await asyncio.sleep(0.5)
-                await ws.send(f'modulation:{self.trx_index},{mode};') #/uglyhack
+                await ws.send(f'modulation:{self.trx_index},{mode};')
+            # end uglyhack
+
             self._clear_tx_state()
 
     async def _network_loop(self):
