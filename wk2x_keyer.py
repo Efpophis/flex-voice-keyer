@@ -395,33 +395,37 @@ def run_gui(settings, layout, window):
 
 
     while True:
-        # see if audio has finished, and we need to un-key the rig
-        if audio.PollAudio() == True:
-            #time.sleep(0.1)
-            audio.StopAudio()
 
-        flex_status, state = audio.Status()
-
-        if counter >= 20:
-            prev = audio_status
-            audio_status = audio.ValidateAudioDevice(device)
-            window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
-            if prev != audio_status and audio_status == "READY":
-                if audio.BackendName() == "SmartSDR (DAX)" and audio.device == "AetherSDR TX":
-                    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
-                else:
-                    EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", False)
-            counter = 0
-        else:
-            counter += 1
 
         event, values = window.read(timeout=50)
-        update_status_indicators(window, flex_status, audio_status, state)
+
 
 
         if event == sg.WIN_CLOSED or event == "Exit":
             break
         else:
+            # see if audio has finished, and we need to un-key the rig
+            if audio.PollAudio() == True:
+                #time.sleep(0.1)
+                audio.StopAudio()
+
+            flex_status, state = audio.Status()
+
+            if counter >= 20:
+                prev = audio_status
+                audio_status = audio.ValidateAudioDevice(device)
+                window["Audio::Dev"].update(device, visible=(audio_status == "READY"))
+                if prev != audio_status and audio_status == "READY":
+                    if audio.BackendName() == "SmartSDR (DAX)" and audio.device == "AetherSDR TX":
+                        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", settings['audio-hack'])
+                    else:
+                        EnsureAudioPath("aethersdr-tx:monitor_MONO", "AetherSDR:input_AUX0", False)
+                counter = 0
+            else:
+                counter += 1
+
+            update_status_indicators(window, flex_status, audio_status, state)
+
             #if "Play::" in event:
             if event.startswith("Play::"):
                 keyp = event[6:]
